@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>マッチングシート</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --card: #ffffff;
+      --line: #e7e1d7;
+      --text: #222222;
+      --sub: #6b6b6b;
+      --accent: #4f46e5;
+      --accent-soft: #eef2ff;
+      --danger: #c0392b;
+      --chip: #f3efe8;
+      --shadow: 0 8px 24px rgba(0,0,0,.06);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    a { color: #3b82f6; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+
+    /* ─── Login ─────────────────────────── */
+    .login {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .login-box {
+      width: 100%; max-width: 380px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 26px 20px 20px;
+    }
+    .login-title { font-size: 22px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+    .login-sub { font-size: 13px; color: var(--sub); text-align: center; line-height: 1.6; margin-bottom: 18px; }
+
+    .input {
+      width: 100%;
+      border: 1px solid #d8d2c8;
+      background: #fff;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 16px;
+      outline: none;
+    }
+    .input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,70,229,.08); }
+
+    .btn {
+      width: 100%; margin-top: 12px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer;
+    }
+    .btn:active { opacity: 0.88; }
+
+    .loading, .err { margin-top: 10px; text-align: center; font-size: 12px; display: none; }
+    .loading { color: var(--sub); }
+    .err { color: var(--danger); }
+
+    /* ─── App shell ─────────────────────── */
+    .app { display: none; min-height: 100vh; }
+
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(246,244,239,.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid rgba(0,0,0,.04);
+    }
+    .topbar-inner { max-width: 1120px; margin: 0 auto; padding: 14px 14px 12px; }
+
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .page-title { font-size: 22px; font-weight: 800; letter-spacing: .02em; }
+    .meta { font-size: 13px; color: var(--sub); margin-top: 4px; }
+
+    .logout {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .search-wrap { display: flex; gap: 8px; align-items: center; }
+    .search {
+      width: 100%;
+      border: 1px solid #d8d2c8;
+      background: #fff;
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 15px;
+      outline: none;
+    }
+    .search:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,70,229,.08); }
+
+    /* ─── Match banner ───────────────────── */
+    .match-banner {
+      background: var(--accent);
+      color: #fff;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .match-banner-text { font-size: 14px; font-weight: 700; }
+    .match-back-btn {
+      border: 1px solid rgba(255,255,255,.5);
+      background: transparent;
+      color: #fff;
+      border-radius: 10px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .match-back-btn:hover { background: rgba(255,255,255,.15); }
+
+    /* ─── Grid / Card ────────────────────── */
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 16px 14px 40px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    @media (min-width: 760px)  { .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    @media (min-width: 1100px) { .grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .photo-wrap { position: relative; background: #ece7de; }
+    .photo { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #ece7de; }
+    .photo-placeholder {
+      width: 100%; aspect-ratio: 4/3;
+      display: flex; align-items: center; justify-content: center;
+      color: #8b8b8b; font-size: 13px;
+      background: linear-gradient(135deg, #efebe3, #e5dfd3);
+    }
+
+    .type-badge {
+      position: absolute; left: 12px; bottom: 12px;
+      background: rgba(255,255,255,.92);
+      color: #333;
+      border: 1px solid rgba(0,0,0,.05);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px; font-weight: 700;
+      backdrop-filter: blur(6px);
+    }
+
+    /* マッチスコアバッジ */
+    .score-badge {
+      position: absolute; right: 12px; top: 12px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px; font-weight: 700;
+    }
+
+    .body { padding: 16px 16px 15px; }
+    .name { font-size: 20px; font-weight: 800; line-height: 1.35; margin-bottom: 6px; }
+    .headline { font-size: 14px; color: var(--sub); line-height: 1.6; margin-bottom: 12px; }
+
+    .section { margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0ebe2; }
+    .row { font-size: 13px; line-height: 1.7; margin-top: 6px; word-break: break-word; }
+    .label { display: inline-block; min-width: 58px; font-weight: 700; color: #444; margin-right: 6px; }
+
+    /* 電話番号リンク */
+    .tel-link { color: #059669; font-weight: 600; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 12px; padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--chip);
+      border: 1px solid #e7e0d5;
+      color: #444; line-height: 1.2;
+    }
+
+    .detail-box {
+      margin-top: 8px;
+      background: #faf8f4;
+      border: 1px solid #efe8dc;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px; line-height: 1.7;
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* マッチングボタン */
+    .match-btn {
+      display: block; width: 100%;
+      margin-top: 14px;
+      padding: 11px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid #c7d2fe;
+      border-radius: 12px;
+      font-size: 13px; font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+    }
+    .match-btn:hover { background: #e0e7ff; }
+
+    .empty {
+      background: #fff; border: 1px solid var(--line);
+      border-radius: 18px; padding: 36px 20px;
+      text-align: center; color: var(--sub);
+      box-shadow: var(--shadow);
+    }
+    .small { font-size: 12px; color: var(--sub); }
+  </style>
+</head>
+<body>
+
+<!-- ─── ログイン画面 ─────────────────────────────── -->
+<div id="login" class="login">
+  <div class="login-box">
+    <div class="login-title">会員名鑑</div>
+    <div class="login-sub">パスワードを入力すると会員情報を閲覧できます。</div>
+    <input
+      id="pw" class="input" type="password"
+      placeholder="パスワードを入力"
+      onkeydown="if(event.key==='Enter') login()"
+    >
+    <button class="btn" onclick="login()">入る</button>
+    <div id="loading" class="loading">読み込み中...</div>
+    <div id="err" class="err"></div>
+  </div>
+</div>
+
+<!-- ─── メイン画面 ─────────────────────────────── -->
+<div id="app" class="app">
+
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="title-row">
+        <div>
+          <div class="page-title">会員名鑑</div>
+          <div id="count" class="meta">0件</div>
+        </div>
+        <button class="logout" onclick="logout()">ログアウト</button>
+      </div>
+      <div class="search-wrap">
+        <input
+          id="search" class="search" type="text"
+          placeholder="名前・会社名・会場・仕事内容・探している方で検索"
+          oninput="render()"
+        >
+      </div>
+    </div>
+  </div>
+
+  <!-- マッチングバナー（マッチング中のみ表示） -->
+  <div id="match-banner" class="match-banner" style="display:none">
+    <div class="match-banner-text">🤝 <span id="match-name"></span>さんへのマッチング結果</div>
+    <button class="match-back-btn" onclick="clearMatch()">× 通常表示に戻る</button>
+  </div>
+
+  <div class="wrap">
+    <div id="list"></div>
+  </div>
+</div>
+
+<script>
+  // ★ GASをデプロイ後、発行されたURLに書き換えてください
+  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxvHd7itvxGO5zdIondd1nHVFaqdOCKRjJZO7O1pEx9fvJUe_BaDkXlaO8JY_W7K8o/exec';
+
+  let allData    = [];
+  let matchTarget = null;
+  let _cardStore  = []; // renderCard のクリックハンドラ用一時ストア
+
+  // ページ読み込み時：セッションにパスワードが残っていれば自動ログイン
+  document.addEventListener('DOMContentLoaded', () => {
+    const saved = sessionStorage.getItem('memberPw');
+    if (saved) loginWithPassword(saved);
+  });
+
+  /* ─── UI ヘルパー ────────────────── */
+  function setLoading(v) {
+    document.getElementById('loading').style.display = v ? 'block' : 'none';
+  }
+  function setError(msg) {
+    const el = document.getElementById('err');
+    el.textContent = msg || 'エラーが発生しました';
+    el.style.display = 'block';
+  }
+  function clearError() {
+    document.getElementById('err').style.display = 'none';
+  }
+
+  /* ─── ログイン ───────────────────── */
+  function login() {
+    const pw = document.getElementById('pw').value.trim();
+    if (!pw) { setError('パスワードを入力してください'); return; }
+    clearError();
+    loginWithPassword(pw);
+  }
+
+  async function loginWithPassword(pw) {
+    setLoading(true);
+    try {
+      const res  = await fetch(GAS_API_URL + '?password=' + encodeURIComponent(pw));
+      if (!res.ok) throw new Error('通信エラー (' + res.status + ')');
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || '読み込みに失敗しました');
+
+      sessionStorage.setItem('memberPw', pw);
+      allData = Array.isArray(json.data) ? json.data : [];
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('app').style.display   = 'block';
+      render();
+    } catch (err) {
+      sessionStorage.removeItem('memberPw');
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function logout() {
+    allData = []; matchTarget = null;
+    sessionStorage.removeItem('memberPw');
+    document.getElementById('pw').value     = '';
+    document.getElementById('search').value = '';
+    document.getElementById('app').style.display   = 'none';
+    document.getElementById('login').style.display = 'flex';
+    clearError();
+  }
+
+  /* ─── マッチング ─────────────────── */
+  function calcMatchScore(target, candidate) {
+    const rawKw = [
+      ...(target.needs || []),
+      ...(target.job   || '').split(/[\s,、。・\/「」【】＆&]+/)
+    ];
+    const keywords = [...new Set(
+      rawKw.map(k => k.trim()).filter(k => k.length >= 2)
+    )];
+    if (!keywords.length) return 0;
+
+    const text = [
+      candidate.name, candidate.company, candidate.job,
+      candidate.venue, candidate.detail,
+      ...(candidate.needs || [])
+    ].join(' ');
+
+    return keywords.filter(kw => text.includes(kw)).length;
+  }
+
+  // カード上のボタンから呼ばれる（_cardStore のインデックスで参照）
+  function _handleMatch(idx) {
+    matchTarget = _cardStore[idx];
+    document.getElementById('search').value = '';
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function clearMatch() {
+    matchTarget = null;
+    render();
+  }
+
+  /* ─── 描画 ───────────────────────── */
+  function getSearchText(item) {
+    return [
+      item.name, item.company, item.venue, item.job,
+      item.email, item.tel, item.facebook, item.lineId,
+      item.detail, item.type, ...(item.needs || [])
+    ].join(' ').toLowerCase();
+  }
+
+  function render() {
+    _cardStore = [];
+    const q = (document.getElementById('search').value || '').trim().toLowerCase();
+
+    let displayData;
+    if (matchTarget) {
+      displayData = allData
+        .filter(m => !(m.name === matchTarget.name && m.email === matchTarget.email))
+        .map(m => ({ ...m, _score: calcMatchScore(matchTarget, m) }))
+        .sort((a, b) => b._score - a._score)
+        .filter(m => !q || getSearchText(m).includes(q));
+
+      document.getElementById('match-banner').style.display = 'flex';
+      document.getElementById('match-name').textContent = matchTarget.name;
+    } else {
+      displayData = allData
+        .map(m => ({ ...m, _score: null }))
+        .filter(m => !q || getSearchText(m).includes(q));
+
+      document.getElementById('match-banner').style.display = 'none';
+    }
+
+    document.getElementById('count').textContent = matchTarget
+      ? 'マッチング: ' + displayData.length + '件'
+      : displayData.length + '件';
+
+    document.getElementById('list').innerHTML = displayData.length
+      ? '<div class="grid">' + displayData.map(renderCard).join('') + '</div>'
+      : '<div class="empty">該当する会員が見つかりませんでした。</div>';
+  }
+
+  /* ─── HTML エスケープ ─────────────── */
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function linkify(url) {
+    const s = esc(url);
+    return '<a href="' + s + '" target="_blank" rel="noopener noreferrer">' + s + '</a>';
+  }
+
+  /* ─── カード描画 ─────────────────── */
+  function renderCard(item) {
+    const idx = _cardStore.length;
+    _cardStore.push(item);
+
+    // マッチングスコアバッジ（マッチモードかつスコア > 0 のみ）
+    const scoreBadge = (item._score !== null && item._score > 0)
+      ? '<div class="score-badge">🤝 ' + item._score + '件一致</div>'
+      : '';
+
+    const badges = (item.type ? '<div class="type-badge">' + esc(item.type) + '</div>' : '') + scoreBadge;
+
+    const photo = item.photo
+      ? '<div class="photo-wrap"><img class="photo" src="' + esc(item.photo) + '" alt="' + esc(item.name) + '" loading="lazy">' + badges + '</div>'
+      : '<div class="photo-wrap"><div class="photo-placeholder">写真未登録</div>' + badges + '</div>';
+
+    const headline = [item.company, item.job].filter(Boolean).map(esc).join(' / ') || '&nbsp;';
+
+    const venue = item.venue
+      ? '<div class="row"><span class="label">会場</span>' + esc(item.venue) + '</div>'
+      : '';
+    const email = item.email
+      ? '<div class="row"><span class="label">Mail</span><a href="mailto:' + esc(item.email) + '">' + esc(item.email) + '</a></div>'
+      : '';
+    // tel: リンク（数字と+のみに正規化してhrefに使用）
+    const tel = item.tel
+      ? '<div class="row"><span class="label">TEL</span><a href="tel:' + esc(item.tel.replace(/[^\d+]/g, '')) + '" class="tel-link">' + esc(item.tel) + '</a></div>'
+      : '';
+    const facebook = item.facebook
+      ? '<div class="row"><span class="label">FB</span>' + linkify(item.facebook) + '</div>'
+      : '';
+    const lineId = item.lineId
+      ? '<div class="row"><span class="label">LINE</span>' + esc(item.lineId) + '</div>'
+      : '';
+
+    const chips = (item.needs && item.needs.length)
+      ? '<div class="section"><div class="row"><span class="label">探している方</span></div>'
+        + '<div class="chips">' + item.needs.map(n => '<span class="chip">' + esc(n) + '</span>').join('') + '</div></div>'
+      : '';
+
+    const detail = item.detail
+      ? '<div class="section"><div class="row"><span class="label">内容</span></div><div class="detail-box">' + esc(item.detail) + '</div></div>'
+      : '';
+
+    const timestamp = item.timestamp
+      ? '<div class="section"><div class="small">更新日時: ' + esc(item.timestamp) + '</div></div>'
+      : '';
+
+    // マッチング中は「相性を探す」ボタンを非表示（マッチ結果画面なので不要）
+    const matchBtn = !matchTarget
+      ? '<button class="match-btn" onclick="_handleMatch(' + idx + ')">🔍 相性の良い人を探す</button>'
+      : '';
+
+    return '<div class="card">'
+      + photo
+      + '<div class="body">'
+      + '<div class="name">' + esc(item.name || '') + '</div>'
+      + '<div class="headline">' + headline + '</div>'
+      + '<div class="section">' + venue + email + tel + facebook + lineId + '</div>'
+      + chips + detail + timestamp + matchBtn
+      + '</div></div>';
+  }
+</script>
+</body>
+</html>
