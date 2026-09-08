@@ -254,8 +254,8 @@
 <!-- ─── ログイン画面 ─────────────────────────────── -->
 <div id="login" class="login">
   <div class="login-box">
-    <div class="login-title">会員名鑑</div>
-    <div class="login-sub">パスワードを入力すると会員情報を閲覧できます。</div>
+    <div class="login-title" data-app-name>会員名鑑</div>
+    <div class="login-sub" data-login-note>パスワードを入力すると会員情報を閲覧できます。</div>
     <input
       id="pw" class="input" type="password"
       placeholder="パスワードを入力"
@@ -274,7 +274,7 @@
     <div class="topbar-inner">
       <div class="title-row">
         <div>
-          <div class="page-title">会員名鑑</div>
+          <div class="page-title" data-app-name>会員名鑑</div>
           <div id="count" class="meta">0件</div>
         </div>
         <button class="logout" onclick="logout()">ログアウト</button>
@@ -301,8 +301,22 @@
 </div>
 
 <script>
-  // ★ GASをデプロイ後、発行されたURLに書き換えてください
-  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxvHd7itvxGO5zdIondd1nHVFaqdOCKRjJZO7O1pEx9fvJUe_BaDkXlaO8JY_W7K8o/exec';
+  // =====================================================================
+  // ★ 導入先ごとの設定（他コミュニティへ展開するときはここだけ書き換える）
+  // =====================================================================
+  const CONFIG = {
+    // 画面上部とログイン画面に表示する名称
+    appName: '会員名鑑',
+    // ログイン画面の説明文
+    loginNote: 'パスワードを入力すると会員情報を閲覧できます。',
+    // GASをデプロイ後、発行されたURLに書き換えてください
+    gasApiUrl: 'https://script.google.com/macros/s/AKfycbxvHd7itvxGO5zdIondd1nHVFaqdOCKRjJZO7O1pEx9fvJUe_BaDkXlaO8JY_W7K8o/exec',
+  };
+  const GAS_API_URL = CONFIG.gasApiUrl;
+  document.title = CONFIG.appName;
+  document.querySelectorAll('[data-app-name]').forEach(el => { el.textContent = CONFIG.appName; });
+  const loginNoteEl = document.querySelector('[data-login-note]');
+  if (loginNoteEl) loginNoteEl.textContent = CONFIG.loginNote;
 
   let allData    = [];
   let matchTarget = null;
