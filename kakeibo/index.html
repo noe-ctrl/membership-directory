@@ -292,6 +292,31 @@
     .check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 10px 0; }
     .check input { width: 18px; height: 18px; }
 
+    /* ─── 口座・振替・レシート・ロック ───── */
+    .segment button.on.trn { color: #2563eb; }
+    .entry .amt.trn { color: var(--sub); }
+    .acct-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f0ebe2; font-size: 14px; }
+    .acct-row:last-child { border-bottom: none; }
+    .acct-row .n { font-weight: 700; }
+    .acct-row.total { font-weight: 800; border-top: 2px solid var(--line); border-bottom: none; margin-top: 2px; }
+    .rc-line { display: grid; grid-template-columns: 1fr 1fr 96px 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .rc-line .select, .rc-line .input { padding: 9px 10px; border-radius: 10px; font-size: 14px; }
+    .rc-line .select { padding-right: 28px; background-position: right 8px center; }
+    .rc-line .input.num { text-align: right; }
+    @media (max-width: 420px) { .rc-line { grid-template-columns: 1fr 1fr; } .rc-line .input.num { grid-column: 1; } .rc-line .icon-btn { grid-column: 2; justify-self: end; } }
+    .rc-sum { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 8px 0; }
+    .rc-sum .v { font-size: 20px; font-weight: 800; }
+    .ocr-status { font-size: 12px; color: var(--sub); margin-top: 6px; min-height: 16px; }
+    .ocr-text { font-size: 11px; color: var(--sub); white-space: pre-wrap; max-height: 120px; overflow: auto; background: #faf8f4; border-radius: 10px; padding: 8px; margin-top: 6px; }
+    .lock { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 24px 16px; }
+    .lock.open { display: flex; }
+    .lock-box { width: 100%; max-width: 340px; background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); padding: 26px 20px 20px; text-align: center; }
+    .lock-title { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+    .lock .input { text-align: center; font-size: 24px; letter-spacing: .3em; margin-top: 12px; }
+    .search-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .search-row .input { flex: 1; }
+    .search-row label { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: var(--sub); }
+
     /* ─── Toast ──────────────────────────── */
     #toast {
       position: fixed; left: 50%; bottom: calc(var(--tab-h) + 18px); transform: translateX(-50%);
@@ -326,6 +351,7 @@
       <div class="segment" style="margin-bottom:12px">
         <button id="type-exp" class="on exp" onclick="setEntryType('expense')">支出</button>
         <button id="type-inc" onclick="setEntryType('income')">収入</button>
+        <button id="type-trn" onclick="setEntryType('transfer')">振替</button>
       </div>
       <div class="row2">
         <div class="field">
@@ -337,27 +363,39 @@
           <input id="in-amount" class="input amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off">
         </div>
       </div>
-      <div class="field">
-        <label>分類</label>
-        <div id="in-cats" class="chips"></div>
+      <div id="in-catblock">
+        <div class="field">
+          <label>分類</label>
+          <div id="in-cats" class="chips"></div>
+        </div>
+        <div class="field">
+          <label>項目</label>
+          <div id="in-items" class="chips" style="margin-bottom:8px"></div>
+          <input id="in-item" class="input" type="text" placeholder="項目（任意・自由入力）" autocomplete="off">
+        </div>
       </div>
-      <div class="field">
-        <label>項目</label>
-        <div id="in-items" class="chips" style="margin-bottom:8px"></div>
-        <input id="in-item" class="input" type="text" placeholder="項目（任意・自由入力）" autocomplete="off">
+      <div id="in-transferblock" class="row2" style="display:none">
+        <div class="field">
+          <label>振替元</label>
+          <select id="in-from" class="select"></select>
+        </div>
+        <div class="field">
+          <label>振替先</label>
+          <select id="in-to" class="select"></select>
+        </div>
       </div>
       <div class="row2">
         <div class="field">
           <label>メモ</label>
           <input id="in-memo" class="input" type="text" placeholder="メモ（任意）" autocomplete="off">
         </div>
-        <div class="field">
-          <label>支払方法</label>
-          <input id="in-account" class="input" type="text" list="account-list" placeholder="現金・カード等（任意）" autocomplete="off">
-          <datalist id="account-list"></datalist>
+        <div class="field" id="in-accountfield">
+          <label>支払方法・口座</label>
+          <select id="in-account" class="select"></select>
         </div>
       </div>
       <button class="btn" onclick="saveEntry()">保存する</button>
+      <button class="btn secondary" onclick="openReceipt()">🧾 レシートをまとめて入力（📷 読み取り対応）</button>
     </div>
 
     <div class="card">
@@ -368,9 +406,11 @@
 
   <!-- ─── 一覧 ─────────────────────────── -->
   <section id="view-list" class="view">
+    <div id="acct-card"></div>
     <div class="summary" id="list-summary"></div>
-    <div class="field">
-      <input id="list-q" class="input" type="search" placeholder="分類・項目・メモで絞り込み" oninput="renderList()">
+    <div class="search-row">
+      <input id="list-q" class="input" type="search" placeholder="分類・項目・メモ・店名で検索" oninput="renderList()">
+      <label><input type="checkbox" id="list-all" onchange="renderList()">全期間</label>
     </div>
     <div id="list-body"></div>
   </section>
@@ -427,6 +467,36 @@
     </div>
 
     <div class="card">
+      <div class="card-title">口座・支払方法の管理</div>
+      <div id="acct-list"></div>
+      <div class="btn-row"><button class="btn secondary sm" onclick="openAccount()">＋ 口座を追加</button></div>
+      <div class="hint">現金・クレジットカード・銀行口座などを登録すると、入力時に選べるようになり、一覧画面で残高を確認できます。口座間のお金の移動は「振替」で入力します。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">レシート読み取りの設定</div>
+      <div class="field">
+        <label>読み取り方法</label>
+        <select id="set-ocr" class="select" onchange="setOcrMode(this.value)">
+          <option value="browser">ブラウザ内OCR（無料・初回に辞書を自動ダウンロード）</option>
+          <option value="ai">AI読み取り（Google Apps Script 経由・要APIキー）</option>
+        </select>
+      </div>
+      <div class="field" id="set-ocr-url-field" style="display:none">
+        <label>AI読み取り用のURL（GASウェブアプリのURL）</label>
+        <input id="set-ocr-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setOcrUrl(this.value)">
+      </div>
+      <div class="hint">AI読み取りは <code>kakeibo/gas/receipt-ai.gs</code> を Google Apps Script に貼り付けてデプロイし、そのURLを設定します（手順はREADME参照）。精度はAI読み取りの方が高く、品目の分類まで自動で推定します。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">暗証番号ロック</div>
+      <div id="pin-status" class="small" style="margin-bottom:8px"></div>
+      <div class="btn-row" id="pin-btns"></div>
+      <div class="hint">アプリを開いたときと、5分以上バックグラウンドにしたあとに暗証番号を求めます。データは端末内に保存されるため、端末自体のロックも併用してください。</div>
+    </div>
+
+    <div class="card">
       <div class="card-title">分類・項目の管理</div>
       <div class="segment" style="margin-bottom:10px">
         <button id="cat-exp" class="on exp" onclick="setCatType('expense')">支出</button>
@@ -461,6 +531,16 @@
     <button class="tab" data-view="settings" onclick="showView('settings')"><span class="ic">⚙️</span>設定</button>
   </div>
 </nav>
+
+<div id="lock" class="lock">
+  <div class="lock-box">
+    <div class="lock-title">🔒 家計簿</div>
+    <div class="small">暗証番号を入力してください</div>
+    <input id="lock-pin" class="input" type="password" inputmode="numeric" autocomplete="off" maxlength="8" onkeydown="if(event.key==='Enter') unlock()">
+    <button class="btn" onclick="unlock()">開く</button>
+    <div id="lock-err" class="small exp" style="margin-top:8px;min-height:16px"></div>
+  </div>
+</div>
 
 <div id="modal" class="modal" onclick="if(event.target===this) closeModal()">
   <div class="modal-box" id="modal-box"></div>
@@ -501,6 +581,8 @@ const DEFAULT_CATEGORIES = {
   ]
 };
 
+const DEFAULT_ACCOUNTS = [{ name: '現金', initial: 0 }, { name: '銀行口座', initial: 0 }, { name: 'クレジットカード', initial: 0 }];
+
 /* ─── 状態 ─────────────────────────────── */
 let db = loadDb();
 const ui = {
@@ -512,7 +594,8 @@ const ui = {
   reportMode: 'month',
   reportType: 'expense',
   reportOpen: null,
-  catType: 'expense'
+  catType: 'expense',
+  acctOpen: false
 };
 let importState = null;
 
@@ -532,8 +615,16 @@ function normalizeDb(data) {
     },
     entries: Array.isArray(d.entries) ? d.entries.map(sanitizeEntry).filter(Boolean) : [],
     budgets: { total: num0(d.budgets && d.budgets.total), categories: {} },
-    recurring: Array.isArray(d.recurring) ? d.recurring.filter(r => r && r.category && r.amount > 0) : []
+    recurring: Array.isArray(d.recurring) ? d.recurring.filter(r => r && (r.category || r.type === 'transfer') && r.amount > 0) : [],
+    accounts: Array.isArray(d.accounts) ? d.accounts.filter(a => a && a.name).map(a => ({ id: a.id || uid(), name: String(a.name), initial: Math.round(num0(a.initial)) })) : DEFAULT_ACCOUNTS.map(a => Object.assign({ id: uid() }, a)),
+    settings: {
+      pin: (d.settings && d.settings.pin && d.settings.pin.hash) ? { salt: String(d.settings.pin.salt || ''), hash: String(d.settings.pin.hash) } : null,
+      ocrMode: (d.settings && d.settings.ocrMode === 'ai') ? 'ai' : 'browser',
+      ocrUrl: String(d.settings && d.settings.ocrUrl || '')
+    }
   };
+  // 明細に出てくる口座名は必ず口座一覧に存在させる
+  out.entries.forEach(e => { [e.account, e.toAccount].forEach(n => { if (n && !out.accounts.find(a => a.name === n)) out.accounts.push({ id: uid(), name: n, initial: 0 }); }); });
   if (d.budgets && d.budgets.categories) {
     for (const k in d.budgets.categories) { const v = num0(d.budgets.categories[k]); if (v > 0) out.budgets.categories[k] = v; }
   }
@@ -547,15 +638,19 @@ function sanitizeEntry(e) {
   if (!e || !e.date || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) return null;
   const amount = Math.abs(Math.round(Number(e.amount) || 0));
   if (!amount) return null;
+  const type = e.type === 'income' ? 'income' : e.type === 'transfer' ? 'transfer' : 'expense';
   return {
     id: e.id || uid(),
     date: e.date,
-    type: e.type === 'income' ? 'income' : 'expense',
-    category: String(e.category || 'その他'),
+    type,
+    category: type === 'transfer' ? '振替' : String(e.category || 'その他'),
     item: String(e.item || ''),
     amount,
     memo: String(e.memo || ''),
     account: String(e.account || ''),
+    toAccount: type === 'transfer' ? String(e.toAccount || '') : undefined,
+    store: e.store ? String(e.store) : undefined,
+    receiptId: e.receiptId || undefined,
     ruleId: e.ruleId || undefined
   };
 }
@@ -585,6 +680,18 @@ function esc(s) {
 function toHalfWidth(s) {
   return String(s).replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
 }
+// 半角カタカナ → 全角カタカナ（レシートの品目名用）
+const HALF_KANA = 'ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ｡｢｣､･';
+const FULL_KANA = 'ヲァィゥェォャュョッーアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン。「」、・';
+function toFullKana(s) {
+  return String(s).replace(/[ｦ-ﾝ｡-･][ﾞﾟ]?/g, ch => {
+    const base = FULL_KANA[HALF_KANA.indexOf(ch[0])] || ch[0];
+    if (ch.length === 1) return base;
+    const code = base.charCodeAt(0) + (ch[1] === 'ﾞ' ? 1 : 2);
+    if (ch[1] === 'ﾞ' && base === 'ウ') return 'ヴ';
+    return (ch[1] === 'ﾞ' && /[カ-ト]/.test(base)) || (/[ハ-ホ]/.test(base)) ? String.fromCharCode(code) : base + (ch[1] === 'ﾞ' ? '゛' : '゜');
+  });
+}
 function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
@@ -600,11 +707,27 @@ function catColor(type, name) {
 function entriesInMonth(ym) { return db.entries.filter(e => e.date.slice(0, 7) === ym); }
 function sumBy(list, type) { return list.filter(e => e.type === type).reduce((s, e) => s + e.amount, 0); }
 function sortEntries(list) { return list.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); }
-function accountList() {
-  const set = new Set();
-  db.entries.forEach(e => { if (e.account) set.add(e.account); });
-  return [...set].sort();
+function accountNames() { return db.accounts.map(a => a.name); }
+function ensureAccount(name) {
+  if (!name) return;
+  if (!db.accounts.find(a => a.name === name)) db.accounts.push({ id: uid(), name, initial: 0 });
 }
+function accountBalance(name) {
+  const a = db.accounts.find(x => x.name === name);
+  let bal = a ? a.initial : 0;
+  db.entries.forEach(e => {
+    if (e.type === 'income' && e.account === name) bal += e.amount;
+    else if (e.type === 'expense' && e.account === name) bal -= e.amount;
+    else if (e.type === 'transfer') { if (e.account === name) bal -= e.amount; if (e.toAccount === name) bal += e.amount; }
+  });
+  return bal;
+}
+function accountOptions(selected, allowNone) {
+  return (allowNone ? '<option value=""' + (!selected ? ' selected' : '') + '>（指定なし）</option>' : '')
+    + db.accounts.map(a => '<option value="' + esc(a.name) + '"' + (a.name === selected ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('')
+    + (selected && !db.accounts.find(a => a.name === selected) ? '<option value="' + esc(selected) + '" selected>' + esc(selected) + '</option>' : '');
+}
+function typeLabel(t) { return t === 'income' ? '収入' : t === 'transfer' ? '振替' : '支出'; }
 function ensureCategory(type, name, item) {
   const cats = catsOf(type);
   let c = cats.find(x => x.name === name);
@@ -626,7 +749,7 @@ function postRecurring() {
       const day = Math.min(Math.max(1, Number(r.day) || 1), daysInMonth(ym));
       const date = ym + '-' + pad2(day);
       if (date > today) break;
-      db.entries.push({ id: uid(), date, type: r.type, category: r.category, item: r.item || '', amount: r.amount, memo: r.memo || '', account: r.account || '', ruleId: r.id });
+      db.entries.push({ id: uid(), date, type: r.type, category: r.type === 'transfer' ? '振替' : r.category, item: r.item || '', amount: r.amount, memo: r.memo || '', account: r.account || '', toAccount: r.type === 'transfer' ? (r.toAccount || '') : undefined, ruleId: r.id });
       r.lastPosted = ym; posted++;
       ym = addMonths(ym, 1);
     }
@@ -667,11 +790,25 @@ function setEntryType(t) {
   ui.entryType = t; ui.entryCat = null;
   document.getElementById('type-exp').className = t === 'expense' ? 'on exp' : '';
   document.getElementById('type-inc').className = t === 'income' ? 'on inc' : '';
+  document.getElementById('type-trn').className = t === 'transfer' ? 'on trn' : '';
   renderInput();
 }
 function renderInput() {
   const dateEl = document.getElementById('in-date');
   if (!dateEl.value) dateEl.value = todayStr();
+  const isTr = ui.entryType === 'transfer';
+  document.getElementById('in-catblock').style.display = isTr ? 'none' : '';
+  document.getElementById('in-transferblock').style.display = isTr ? '' : 'none';
+  document.getElementById('in-accountfield').style.display = isTr ? 'none' : '';
+  const accSel = document.getElementById('in-account');
+  accSel.innerHTML = accountOptions(accSel.value, true);
+  if (isTr) {
+    const from = document.getElementById('in-from'), to = document.getElementById('in-to');
+    from.innerHTML = accountOptions(from.value || accountNames()[0], false);
+    to.innerHTML = accountOptions(to.value || accountNames()[1] || accountNames()[0], false);
+    renderDayEntries();
+    return;
+  }
   const cats = catsOf(ui.entryType);
   if (!ui.entryCat || !cats.find(c => c.name === ui.entryCat)) ui.entryCat = cats.length ? cats[0].name : null;
   document.getElementById('in-cats').innerHTML = cats.map(c =>
@@ -683,7 +820,6 @@ function renderInput() {
   const cur = document.getElementById('in-item').value;
   document.getElementById('in-items').innerHTML = items.map(it =>
     '<button class="chip' + (it === cur ? ' on' : '') + '" onclick="pickItem(this.dataset.n)" data-n="' + esc(it) + '">' + esc(it) + '</button>').join('');
-  document.getElementById('account-list').innerHTML = accountList().map(a => '<option value="' + esc(a) + '"></option>').join('');
   renderDayEntries();
 }
 function pickCat(name) { ui.entryCat = name; document.getElementById('in-item').value = ''; renderInput(); }
@@ -698,21 +834,29 @@ function saveEntry() {
   const amount = parseAmount(document.getElementById('in-amount').value);
   if (!date) { toast('日付を入力してください'); return; }
   if (amount == null || amount === 0) { toast('金額を入力してください'); document.getElementById('in-amount').focus(); return; }
-  if (!ui.entryCat) { toast('分類を選択してください'); return; }
-  const item = document.getElementById('in-item').value.trim();
-  const e = {
-    id: uid(), date, type: ui.entryType, category: ui.entryCat, item,
-    amount: Math.abs(amount),
-    memo: document.getElementById('in-memo').value.trim(),
-    account: document.getElementById('in-account').value.trim()
-  };
-  ensureCategory(e.type, e.category, item);
+  let e;
+  if (ui.entryType === 'transfer') {
+    const from = document.getElementById('in-from').value, to = document.getElementById('in-to').value;
+    if (!from || !to) { toast('口座を登録してください（設定 → 口座の管理）'); return; }
+    if (from === to) { toast('振替元と振替先が同じです'); return; }
+    e = { id: uid(), date, type: 'transfer', category: '振替', item: '', amount: Math.abs(amount), memo: document.getElementById('in-memo').value.trim(), account: from, toAccount: to };
+  } else {
+    if (!ui.entryCat) { toast('分類を選択してください'); return; }
+    const item = document.getElementById('in-item').value.trim();
+    e = {
+      id: uid(), date, type: ui.entryType, category: ui.entryCat, item,
+      amount: Math.abs(amount),
+      memo: document.getElementById('in-memo').value.trim(),
+      account: document.getElementById('in-account').value
+    };
+    ensureCategory(e.type, e.category, item);
+  }
   db.entries.push(e);
   saveDb();
   document.getElementById('in-amount').value = '';
   document.getElementById('in-item').value = '';
   document.getElementById('in-memo').value = '';
-  toast((e.type === 'income' ? '収入 ' : '支出 ') + fmtYen(e.amount) + ' を保存しました');
+  toast(typeLabel(e.type) + ' ' + fmtYen(e.amount) + ' を保存しました');
   renderInput();
 }
 function renderDayEntries() {
@@ -730,14 +874,22 @@ function goInputFor(date) {
 
 /* ─── 明細行 ─────────────────────────── */
 function entryRow(e) {
-  const title = e.item ? e.item : e.category;
-  const sub = [e.item ? e.category : '', e.memo, e.account].filter(Boolean).join(' · ');
+  let title, sub, color, amtCls, sign;
+  if (e.type === 'transfer') {
+    title = '振替'; sub = [(e.account || '?') + ' → ' + (e.toAccount || '?'), e.memo].filter(Boolean).join(' · ');
+    color = OTHER_COLOR; amtCls = 'trn'; sign = '';
+  } else {
+    title = e.item ? e.item : e.category;
+    sub = [e.item ? e.category : '', e.store, e.memo, e.account].filter(Boolean).join(' · ');
+    color = catColor(e.type, e.category); amtCls = e.type === 'income' ? 'inc' : 'exp'; sign = e.type === 'income' ? '+' : '-';
+  }
   return '<div class="entry" onclick="openEdit(\'' + e.id + '\')">'
-    + '<span class="cdot" style="background:' + catColor(e.type, e.category) + '"></span>'
+    + '<span class="cdot" style="background:' + color + '"></span>'
     + '<div class="main"><div class="t">' + esc(title) + '</div>' + (sub ? '<div class="s">' + esc(sub) + '</div>' : '') + '</div>'
-    + '<div class="amt num ' + (e.type === 'income' ? 'inc' : 'exp') + '">' + (e.type === 'income' ? '+' : '-') + fmtYen(e.amount) + '</div>'
+    + '<div class="amt num ' + amtCls + '">' + sign + fmtYen(e.amount) + '</div>'
     + '</div>';
 }
+function entrySearchText(e) { return [e.category, e.item, e.memo, e.account, e.toAccount, e.store, e.type === 'transfer' ? '振替' : ''].join(' ').toLowerCase(); }
 function groupedByDay(list) {
   const map = new Map();
   sortEntries(list).forEach(e => { if (!map.has(e.date)) map.set(e.date, []); map.get(e.date).push(e); });
@@ -759,12 +911,30 @@ function summaryTiles(list) {
 
 /* ─── 一覧 ───────────────────────────── */
 function renderList() {
-  const all = entriesInMonth(ui.month);
-  document.getElementById('list-summary').innerHTML = summaryTiles(all);
+  document.getElementById('acct-card').innerHTML = accountCardHtml();
   const q = (document.getElementById('list-q').value || '').trim().toLowerCase();
-  const list = q ? all.filter(e => [e.category, e.item, e.memo, e.account].join(' ').toLowerCase().includes(q)) : all;
-  document.getElementById('list-body').innerHTML = list.length ? groupedByDay(list)
-    : '<div class="empty">' + (all.length ? '該当する明細がありません' : 'この月の入力はありません') + '</div>';
+  const allPeriod = document.getElementById('list-all').checked && q;
+  const base = allPeriod ? db.entries : entriesInMonth(ui.month);
+  const list = q ? base.filter(e => entrySearchText(e).includes(q)) : base;
+  document.getElementById('list-summary').innerHTML = summaryTiles(allPeriod ? list : base);
+  let note = '';
+  let shown = list;
+  if (allPeriod) {
+    note = '<div class="small" style="margin-bottom:6px">全期間の検索結果: ' + list.length.toLocaleString() + '件' + (list.length > 300 ? '（新しい300件を表示）' : '') + '</div>';
+    if (list.length > 300) shown = sortEntries(list).slice(0, 300);
+  }
+  document.getElementById('list-body').innerHTML = note + (shown.length ? groupedByDay(shown)
+    : '<div class="empty">' + (q ? '該当する明細がありません' : 'この月の入力はありません') + '</div>');
+}
+function accountCardHtml() {
+  if (!db.accounts.length) return '';
+  const rows = db.accounts.map(a => ({ name: a.name, bal: accountBalance(a.name) }));
+  const total = rows.reduce((s, r) => s + r.bal, 0);
+  return '<div class="card" style="padding:12px 16px"><div class="card-title" style="margin-bottom:4px"><span>口座残高</span><button class="btn secondary sm" onclick="ui.acctOpen=!ui.acctOpen;renderList()">' + (ui.acctOpen ? '閉じる' : '表示') + '</button></div>'
+    + (ui.acctOpen ? rows.map(r => '<div class="acct-row"><span class="n">' + esc(r.name) + '</span><span class="num' + (r.bal < 0 ? ' exp' : '') + '">' + fmtYen(r.bal) + '</span></div>').join('')
+      + '<div class="acct-row total"><span>合計</span><span class="num' + (total < 0 ? ' exp' : '') + '">' + fmtYen(total) + '</span></div>'
+      : '<div class="small num">合計 ' + fmtYen(total) + '</div>')
+    + '</div>';
 }
 
 /* ─── カレンダー ─────────────────────── */
@@ -772,7 +942,7 @@ function renderCalendar() {
   const all = entriesInMonth(ui.month);
   document.getElementById('cal-summary').innerHTML = summaryTiles(all);
   const byDay = {};
-  all.forEach(e => { const d = byDay[e.date] || (byDay[e.date] = { ex: 0, inc: 0 }); d[e.type === 'income' ? 'inc' : 'ex'] += e.amount; });
+  all.forEach(e => { if (e.type === 'transfer') return; const d = byDay[e.date] || (byDay[e.date] = { ex: 0, inc: 0 }); d[e.type === 'income' ? 'inc' : 'ex'] += e.amount; });
   const [y, m] = ui.month.split('-').map(Number);
   const first = new Date(y, m - 1, 1).getDay();
   const n = daysInMonth(ui.month);
@@ -976,13 +1146,30 @@ function renderSettings() {
 
   document.getElementById('rec-list').innerHTML = db.recurring.map(r =>
     '<div class="cat-item">'
-    + '<div class="n"><div>' + esc(r.item || r.category) + ' <span class="small">（' + esc(r.category) + '）</span>'
+    + '<div class="n"><div>' + (r.type === 'transfer' ? '振替 <span class="small">（' + esc(r.account) + ' → ' + esc(r.toAccount) + '）</span>' : esc(r.item || r.category) + ' <span class="small">（' + esc(r.category) + '）</span>')
     + (r.enabled === false ? ' <span class="small exp">停止中</span>' : '') + '</div>'
-    + '<div class="items">毎月' + r.day + '日 · <span class="' + (r.type === 'income' ? 'inc' : 'exp') + '">' + (r.type === 'income' ? '+' : '-') + fmtYen(r.amount) + '</span>'
+    + '<div class="items">毎月' + r.day + '日 · <span class="' + (r.type === 'income' ? 'inc' : r.type === 'transfer' ? '' : 'exp') + '">' + (r.type === 'income' ? '+' : r.type === 'transfer' ? '' : '-') + fmtYen(r.amount) + '</span>'
     + (r.startMonth ? ' · ' + fmtMonth(r.startMonth) + 'から' : '') + (r.endMonth ? fmtMonth(r.endMonth) + 'まで' : '') + (r.memo ? ' · ' + esc(r.memo) : '') + '</div></div>'
     + '<button class="icon-btn" title="編集" onclick="openRecurring(\'' + r.id + '\')">✎</button>'
     + '<button class="icon-btn danger" title="削除" onclick="deleteRecurring(\'' + r.id + '\')">×</button>'
     + '</div>').join('') || '<div class="small">定期収支は登録されていません</div>';
+
+  document.getElementById('acct-list').innerHTML = db.accounts.map((a, i) =>
+    '<div class="cat-item"><div class="n"><div>' + esc(a.name) + '</div><div class="items">残高 <span class="num">' + fmtYen(accountBalance(a.name)) + '</span>（初期残高 ' + fmtYen(a.initial) + '）</div></div>'
+    + '<button class="icon-btn" title="上へ" onclick="moveAccount(' + i + ',-1)"' + (i === 0 ? ' disabled' : '') + '>↑</button>'
+    + '<button class="icon-btn" title="下へ" onclick="moveAccount(' + i + ',1)"' + (i === db.accounts.length - 1 ? ' disabled' : '') + '>↓</button>'
+    + '<button class="icon-btn" title="編集" onclick="openAccount(\'' + a.id + '\')">✎</button>'
+    + '<button class="icon-btn danger" title="削除" onclick="deleteAccount(\'' + a.id + '\')">×</button></div>').join('')
+    || '<div class="small">口座が登録されていません</div>';
+
+  document.getElementById('set-ocr').value = db.settings.ocrMode;
+  document.getElementById('set-ocr-url-field').style.display = db.settings.ocrMode === 'ai' ? '' : 'none';
+  document.getElementById('set-ocr-url').value = db.settings.ocrUrl;
+
+  document.getElementById('pin-status').textContent = db.settings.pin ? '暗証番号ロック: 有効' : '暗証番号ロック: 未設定';
+  document.getElementById('pin-btns').innerHTML = db.settings.pin
+    ? '<button class="btn secondary sm" onclick="openPinModal(\'change\')">暗証番号を変更</button><button class="btn danger sm" onclick="openPinModal(\'remove\')">ロックを解除する</button>'
+    : '<button class="btn secondary sm" onclick="openPinModal(\'set\')">暗証番号を設定</button>';
 
   const dates = db.entries.map(e => e.date).sort();
   document.getElementById('stats-hint').textContent = db.entries.length
@@ -1042,14 +1229,18 @@ function catOptions(type, selected) {
   return catsOf(type).map(c => '<option value="' + esc(c.name) + '"' + (c.name === selected ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('');
 }
 function openRecurring(id) {
-  const r = id ? db.recurring.find(x => x.id === id) : { type: 'expense', category: '', item: '', amount: '', memo: '', day: 25, startMonth: todayStr().slice(0, 7), endMonth: '', account: '' };
+  const r = id ? db.recurring.find(x => x.id === id) : { type: 'expense', category: '', item: '', amount: '', memo: '', day: 25, startMonth: todayStr().slice(0, 7), endMonth: '', account: '', toAccount: '' };
   if (!r) return;
+  const isTr = r.type === 'transfer';
   openModal(id ? '定期収支を編集' : '定期収支を追加',
-    '<div class="row2"><div class="field"><label>種別</label><select id="m-r-type" class="select" onchange="document.getElementById(\'m-r-cat\').innerHTML = catOptions(this.value)">'
-    + '<option value="expense"' + (r.type !== 'income' ? ' selected' : '') + '>支出</option><option value="income"' + (r.type === 'income' ? ' selected' : '') + '>収入</option></select></div>'
-    + '<div class="field"><label>分類</label><select id="m-r-cat" class="select">' + catOptions(r.type, r.category) + '</select></div></div>'
-    + '<div class="row2"><div class="field"><label>項目</label><input id="m-r-item" class="input" value="' + esc(r.item) + '" placeholder="例: 家賃"></div>'
+    '<div class="row2"><div class="field"><label>種別</label><select id="m-r-type" class="select" onchange="typeBlocksChanged(\'m-r\', this.value)">'
+    + '<option value="expense"' + (r.type === 'expense' ? ' selected' : '') + '>支出</option><option value="income"' + (r.type === 'income' ? ' selected' : '') + '>収入</option><option value="transfer"' + (isTr ? ' selected' : '') + '>振替</option></select></div>'
+    + '<div class="field" id="m-r-catblock"' + (isTr ? ' style="display:none"' : '') + '><label>分類</label><select id="m-r-cat" class="select">' + catOptions(isTr ? 'expense' : r.type, r.category) + '</select></div></div>'
+    + '<div class="row2" id="m-r-trblock"' + (isTr ? '' : ' style="display:none"') + '><div class="field"><label>振替元</label><select id="m-r-from" class="select">' + accountOptions(r.account || accountNames()[0], false) + '</select></div>'
+    + '<div class="field"><label>振替先</label><select id="m-r-to" class="select">' + accountOptions(r.toAccount || accountNames()[1] || accountNames()[0], false) + '</select></div></div>'
+    + '<div class="row2"><div class="field" id="m-r-itemblock"' + (isTr ? ' style="display:none"' : '') + '><label>項目</label><input id="m-r-item" class="input" value="' + esc(r.item) + '" placeholder="例: 家賃"></div>'
     + '<div class="field"><label>金額（円）</label><input id="m-r-amount" class="input num" type="text" inputmode="numeric" value="' + (r.amount ? r.amount.toLocaleString() : '') + '"></div></div>'
+    + '<div class="field" id="m-r-accblock"' + (isTr ? ' style="display:none"' : '') + '><label>支払方法・口座</label><select id="m-r-acc" class="select">' + accountOptions(r.account, true) + '</select></div>'
     + '<div class="row2"><div class="field"><label>毎月の日</label><input id="m-r-day" class="input" type="number" min="1" max="31" value="' + esc(r.day) + '"></div>'
     + '<div class="field"><label>メモ</label><input id="m-r-memo" class="input" value="' + esc(r.memo) + '"></div></div>'
     + '<div class="row2"><div class="field"><label>開始月</label><input id="m-r-start" class="input" type="month" value="' + esc(r.startMonth || '') + '"></div>'
@@ -1061,13 +1252,18 @@ function openRecurring(id) {
 function saveRecurring(id) {
   const amount = parseAmount(document.getElementById('m-r-amount').value);
   const day = Number(document.getElementById('m-r-day').value);
-  const category = document.getElementById('m-r-cat').value;
+  const type = document.getElementById('m-r-type').value;
+  const isTr = type === 'transfer';
+  const category = isTr ? '振替' : document.getElementById('m-r-cat').value;
+  const from = document.getElementById('m-r-from').value, to = document.getElementById('m-r-to').value;
   if (!category) { toast('分類を選択してください'); return; }
+  if (isTr && (!from || !to || from === to)) { toast('振替元と振替先を確認してください'); return; }
   if (amount == null || amount === 0) { toast('金額を入力してください'); return; }
   if (!(day >= 1 && day <= 31)) { toast('日は1〜31で入力してください'); return; }
   const data = {
-    type: document.getElementById('m-r-type').value, category,
-    item: document.getElementById('m-r-item').value.trim(), amount: Math.abs(amount),
+    type, category,
+    item: isTr ? '' : document.getElementById('m-r-item').value.trim(), amount: Math.abs(amount),
+    account: isTr ? from : document.getElementById('m-r-acc').value, toAccount: isTr ? to : '',
     memo: document.getElementById('m-r-memo').value.trim(), day,
     startMonth: document.getElementById('m-r-start').value || todayStr().slice(0, 7),
     endMonth: document.getElementById('m-r-end').value || '',
@@ -1081,7 +1277,7 @@ function saveRecurring(id) {
     r = Object.assign({ id: uid(), lastPosted: null }, data);
     db.recurring.push(r);
   }
-  ensureCategory(r.type, r.category, r.item);
+  if (r.type !== 'transfer') ensureCategory(r.type, r.category, r.item);
   saveDb(); closeModal(); postRecurring(); renderSettings(); toast('定期収支を保存しました');
 }
 function deleteRecurring(id) {
@@ -1094,17 +1290,38 @@ function deleteRecurring(id) {
 function openEdit(id) {
   const e = db.entries.find(x => x.id === id);
   if (!e) return;
+  const isTr = e.type === 'transfer';
+  const catType = isTr ? 'expense' : e.type;
+  const receiptN = e.receiptId ? db.entries.filter(x => x.receiptId === e.receiptId).length : 0;
   openModal('明細を編集',
-    '<div class="row2"><div class="field"><label>種別</label><select id="m-e-type" class="select" onchange="document.getElementById(\'m-e-cat\').innerHTML = catOptions(this.value)">'
-    + '<option value="expense"' + (e.type !== 'income' ? ' selected' : '') + '>支出</option><option value="income"' + (e.type === 'income' ? ' selected' : '') + '>収入</option></select></div>'
+    '<div class="row2"><div class="field"><label>種別</label><select id="m-e-type" class="select" onchange="typeBlocksChanged(\'m-e\', this.value)">'
+    + '<option value="expense"' + (e.type === 'expense' ? ' selected' : '') + '>支出</option><option value="income"' + (e.type === 'income' ? ' selected' : '') + '>収入</option><option value="transfer"' + (isTr ? ' selected' : '') + '>振替</option></select></div>'
     + '<div class="field"><label>日付</label><input id="m-e-date" class="input" type="date" value="' + e.date + '"></div></div>'
-    + '<div class="row2"><div class="field"><label>分類</label><select id="m-e-cat" class="select">' + catOptions(e.type, e.category) + (catsOf(e.type).find(c => c.name === e.category) ? '' : '<option selected>' + esc(e.category) + '</option>') + '</select></div>'
+    + '<div class="row2" id="m-e-catblock"' + (isTr ? ' style="display:none"' : '') + '><div class="field"><label>分類</label><select id="m-e-cat" class="select">' + catOptions(catType, e.category) + (isTr || catsOf(catType).find(c => c.name === e.category) ? '' : '<option selected>' + esc(e.category) + '</option>') + '</select></div>'
     + '<div class="field"><label>項目</label><input id="m-e-item" class="input" value="' + esc(e.item) + '"></div></div>'
+    + '<div class="row2" id="m-e-trblock"' + (isTr ? '' : ' style="display:none"') + '><div class="field"><label>振替元</label><select id="m-e-from" class="select">' + accountOptions(isTr ? e.account : accountNames()[0], false) + '</select></div>'
+    + '<div class="field"><label>振替先</label><select id="m-e-to" class="select">' + accountOptions(e.toAccount || accountNames()[1] || accountNames()[0], false) + '</select></div></div>'
     + '<div class="field"><label>金額（円）</label><input id="m-e-amount" class="input amount" type="text" inputmode="numeric" value="' + e.amount.toLocaleString() + '"></div>'
     + '<div class="row2"><div class="field"><label>メモ</label><input id="m-e-memo" class="input" value="' + esc(e.memo) + '"></div>'
-    + '<div class="field"><label>支払方法</label><input id="m-e-account" class="input" list="account-list" value="' + esc(e.account) + '"></div></div>'
+    + '<div class="field" id="m-e-accblock"' + (isTr ? ' style="display:none"' : '') + '><label>支払方法・口座</label><select id="m-e-account" class="select">' + accountOptions(e.account, true) + '</select></div></div>'
+    + '<div class="field" id="m-e-storeblock"' + (isTr ? ' style="display:none"' : '') + '><label>店名</label><input id="m-e-store" class="input" value="' + esc(e.store || '') + '" placeholder="（任意）"></div>'
+    + (receiptN > 1 ? '<div class="hint">このレシート（' + esc(e.store || '店名なし') + '）には他に' + (receiptN - 1) + '件の明細があります。</div>' : '')
     + '<button class="btn" onclick="saveEdit(\'' + id + '\')">保存する</button>'
-    + '<button class="btn danger" onclick="deleteEntry(\'' + id + '\')">この明細を削除</button>');
+    + '<button class="btn danger" onclick="deleteEntry(\'' + id + '\')">この明細を削除</button>'
+    + (receiptN > 1 ? '<button class="btn danger" onclick="deleteReceipt(\'' + esc(e.receiptId) + '\')">このレシートの明細' + receiptN + '件をまとめて削除</button>' : ''));
+}
+function typeBlocksChanged(prefix, type) {
+  const isTr = type === 'transfer';
+  const show = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none'; };
+  show(prefix + '-catblock', !isTr); show(prefix + '-itemblock', !isTr); show(prefix + '-accblock', !isTr); show(prefix + '-storeblock', !isTr);
+  show(prefix + '-trblock', isTr);
+  if (!isTr) document.getElementById(prefix + '-cat').innerHTML = catOptions(type);
+}
+function deleteReceipt(rid) {
+  const n = db.entries.filter(x => x.receiptId === rid).length;
+  if (!confirm('このレシートの明細' + n + '件をすべて削除しますか？')) return;
+  db.entries = db.entries.filter(x => x.receiptId !== rid);
+  saveDb(); closeModal(); render(); toast(n + '件を削除しました');
 }
 function saveEdit(id) {
   const e = db.entries.find(x => x.id === id);
@@ -1115,12 +1332,21 @@ function saveEdit(id) {
   if (amount == null || amount === 0) { toast('金額を入力してください'); return; }
   e.type = document.getElementById('m-e-type').value;
   e.date = date;
-  e.category = document.getElementById('m-e-cat').value || 'その他';
-  e.item = document.getElementById('m-e-item').value.trim();
   e.amount = Math.abs(amount);
   e.memo = document.getElementById('m-e-memo').value.trim();
-  e.account = document.getElementById('m-e-account').value.trim();
-  ensureCategory(e.type, e.category, e.item);
+  if (e.type === 'transfer') {
+    const from = document.getElementById('m-e-from').value, to = document.getElementById('m-e-to').value;
+    if (!from || !to || from === to) { toast('振替元と振替先を確認してください'); return; }
+    e.category = '振替'; e.item = ''; e.account = from; e.toAccount = to; delete e.store;
+  } else {
+    e.category = document.getElementById('m-e-cat').value || 'その他';
+    e.item = document.getElementById('m-e-item').value.trim();
+    e.account = document.getElementById('m-e-account').value;
+    const store = document.getElementById('m-e-store').value.trim();
+    if (store) e.store = store; else delete e.store;
+    delete e.toAccount;
+    ensureCategory(e.type, e.category, e.item);
+  }
   saveDb(); closeModal(); render(); toast('保存しました');
 }
 function deleteEntry(id) {
@@ -1198,7 +1424,9 @@ const COL_RULES = {
   income:   [/^収入$|^収入金額$|^入金$/, /収入|入金|income/i],
   expense:  [/^支出$|^支出金額$|^出金$/, /支出|出金|expense/i],
   memo:     [/^メモ$|^備考$/, /メモ|備考|コメント|note|memo|remark/i],
-  account:  [/^口座$|^支払方法$|^支払い方法$/, /口座|支払|決済|account|payment|wallet|財布/i]
+  account:  [/^口座$|^支払方法$|^支払い方法$/, /口座|支払|決済|account|payment|wallet|財布/i],
+  toAccount: [/^振替先$/, /振替先|入金口座|移動先|to_?account/i],
+  store:    [/^店名$|^店舗$/, /店名|店舗|お店|shop|store/i]
 };
 function guessColumns(header) {
   const map = {}; const used = new Set();
@@ -1280,7 +1508,7 @@ function buildImportEntries() {
       amount = parseAmount(col(r, 'amount'));
       if (s.typeMode === 'column') {
         const t = col(r, 'type');
-        type = /収入|入金|income|^in$|^収$|^\+$|受取/i.test(t) ? 'income' : 'expense';
+        type = /振替|transfer|移動/i.test(t) ? 'transfer' : /収入|入金|income|^in$|^収$|^\+$|受取/i.test(t) ? 'income' : 'expense';
       } else if (s.typeMode === 'sign') {
         type = (amount != null && amount < 0) ? 'expense' : 'income';
       } else if (s.typeMode === 'signrev') {
@@ -1294,11 +1522,14 @@ function buildImportEntries() {
     let category = col(r, 'category'), item = col(r, 'item');
     if (!category && item) { category = item; item = ''; }
     if (!category) category = 'その他';
-    out.push({ date, type, category, item, amount, memo: col(r, 'memo'), account: col(r, 'account') });
+    const entry = { date, type, category, item, amount, memo: col(r, 'memo'), account: col(r, 'account') };
+    if (type === 'transfer') { entry.category = '振替'; entry.item = ''; entry.toAccount = col(r, 'toAccount') || item; }
+    const store = col(r, 'store'); if (store) entry.store = store;
+    out.push(entry);
   });
   return { entries: out, bad };
 }
-function dupKey(e) { return [e.date, e.type, e.category, e.item, e.amount, e.memo].join('|'); }
+function dupKey(e) { return [e.date, e.type, e.category, e.item, e.amount, e.memo, e.type === 'transfer' ? (e.account + '>' + e.toAccount) : ''].join('|'); }
 function renderImportModal() {
   const s = importState; if (!s) return;
   const header = s.hasHeader ? s.rows[0] : (s.rows[0] || []).map((_, i) => (i + 1) + '列目');
@@ -1317,15 +1548,15 @@ function renderImportModal() {
     + '<div><label>1行目</label><select class="select" onchange="setImportOpt(\'hasHeader\', this.value === \'1\')"><option value="1"' + (s.hasHeader ? ' selected' : '') + '>見出し行</option><option value="0"' + (!s.hasHeader ? ' selected' : '') + '>データ行</option></select></div>'
     + '</div>';
   html += '<div class="card-title" style="margin-top:6px">列の割り当て</div><div class="map-grid">'
-    + colSel('date', '日付') + colSel('category', '分類') + colSel('item', '項目') + colSel('memo', 'メモ') + colSel('account', '支払方法・口座')
+    + colSel('date', '日付') + colSel('category', '分類') + colSel('item', '項目') + colSel('memo', 'メモ') + colSel('account', '支払方法・口座') + colSel('store', '店名')
     + '<div><label>収支の判定</label><select class="select" onchange="setImportOpt(\'typeMode\', this.value)">'
     + [['column', '「収支」列で判定'], ['twocol', '収入列・支出列で判定'], ['category', '分類名から判定'], ['sign', '金額の符号（マイナス=支出）'], ['signrev', '金額の符号（マイナス=収入）'], ['expense', 'すべて支出'], ['income', 'すべて収入']]
       .map(([v, l]) => '<option value="' + v + '"' + (tm === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>'
     + (tm === 'twocol' ? colSel('income', '収入金額') + colSel('expense', '支出金額') : colSel('amount', '金額'))
-    + (tm === 'column' ? colSel('type', '収支') : '')
+    + (tm === 'column' ? colSel('type', '収支') + colSel('toAccount', '振替先') : '')
     + '</div>';
   html += '<div class="card-title" style="margin-top:14px">プレビュー <span class="small">先頭5件</span></div><div class="preview"><table><tr><th>日付</th><th>収支</th><th>分類</th><th>項目</th><th>金額</th><th>メモ</th></tr>'
-    + (preview.length ? preview.map(e => '<tr><td>' + e.date + '</td><td class="' + (e.type === 'income' ? 'inc' : 'exp') + '">' + (e.type === 'income' ? '収入' : '支出') + '</td><td>' + esc(e.category) + '</td><td>' + esc(e.item) + '</td><td class="num">' + fmtYen(e.amount) + '</td><td>' + esc(e.memo) + '</td></tr>').join('')
+    + (preview.length ? preview.map(e => '<tr><td>' + e.date + '</td><td class="' + (e.type === 'income' ? 'inc' : e.type === 'transfer' ? '' : 'exp') + '">' + typeLabel(e.type) + '</td><td>' + esc(e.category) + '</td><td>' + esc(e.item) + '</td><td class="num">' + fmtYen(e.amount) + '</td><td>' + esc(e.memo) + '</td></tr>').join('')
       : '<tr><td colspan="6" class="bad">読み取れる行がありません。列の割り当てを確認してください。</td></tr>') + '</table></div>';
   if (built.bad.length) html += '<div class="hint exp">読み取れない行: ' + built.bad.length + '件（例: ' + built.bad[0].line + '行目 ' + built.bad[0].reason + '）— これらは取り込まれません</div>';
   html += '<div class="check"><input type="checkbox" id="imp-dup"' + (s.skipDup ? ' checked' : '') + ' onchange="setImportOpt(\'skipDup\', this.checked)"><label for="imp-dup">登録済みと同じ内容の行はスキップ' + (dups ? '（' + dups + '件）' : '') + '</label></div>';
@@ -1339,7 +1570,8 @@ function runImport() {
   let added = 0, skipped = 0;
   built.entries.forEach(e => {
     if (s.skipDup && existing.has(dupKey(e))) { skipped++; return; }
-    ensureCategory(e.type, e.category, e.item);
+    if (e.type !== 'transfer') ensureCategory(e.type, e.category, e.item);
+    ensureAccount(e.account); ensureAccount(e.toAccount);
     db.entries.push(Object.assign({ id: uid() }, e));
     added++;
   });
@@ -1360,8 +1592,8 @@ function csvCell(v) { const s = String(v == null ? '' : v); return /[",\n\r]/.te
 function exportCsv(scope) {
   const list = sortEntries(scope === 'month' ? entriesInMonth(ui.month) : db.entries).reverse();
   if (!list.length) { toast('書き出すデータがありません'); return; }
-  const lines = [['日付', '収支', '分類', '項目', '金額', 'メモ', '支払方法']];
-  list.forEach(e => lines.push([e.date.replace(/-/g, '/'), e.type === 'income' ? '収入' : '支出', e.category, e.item, e.amount, e.memo, e.account]));
+  const lines = [['日付', '収支', '分類', '項目', '金額', 'メモ', '支払方法', '振替先', '店名']];
+  list.forEach(e => lines.push([e.date.replace(/-/g, '/'), typeLabel(e.type), e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '']));
   const csv = '﻿' + lines.map(r => r.map(csvCell).join(',')).join('\r\n');
   downloadFile('kakeibo_' + (scope === 'month' ? ui.month : 'all') + '.csv', csv, 'text/csv;charset=utf-8');
 }
@@ -1388,6 +1620,7 @@ function onRestoreFile(input) {
       inc.entries.forEach(e => { if (!existing.has(dupKey(e))) { db.entries.push(e); added++; } });
       inc.categories.expense.forEach(c => { ensureCategory('expense', c.name); c.items.forEach(it => ensureCategory('expense', c.name, it)); });
       inc.categories.income.forEach(c => { ensureCategory('income', c.name); c.items.forEach(it => ensureCategory('income', c.name, it)); });
+      inc.accounts.forEach(a => ensureAccount(a.name));
       toast(added + '件を追加しました');
     }
     saveDb(); render();
@@ -1404,6 +1637,347 @@ function wipeAll() {
   render(); toast('すべてのデータを削除しました');
 }
 
+/* ─── 口座の管理 ─────────────────────── */
+function openAccount(id) {
+  const a = id ? db.accounts.find(x => x.id === id) : { name: '', initial: 0 };
+  if (!a) return;
+  openModal(id ? '口座を編集' : '口座を追加',
+    '<div class="field"><label>口座名</label><input id="m-a-name" class="input" value="' + esc(a.name) + '" placeholder="例: 現金 / 楽天カード / ゆうちょ"></div>'
+    + '<div class="field"><label>初期残高（円）</label><input id="m-a-initial" class="input num" type="text" inputmode="numeric" value="' + a.initial.toLocaleString() + '"></div>'
+    + '<div class="hint">初期残高は、この家計簿で記録を始めた時点の残高です。以降の収入・支出・振替から現在の残高を計算します。クレジットカードは0円のままにしておくと、未払い額がマイナス残高として表示されます。</div>'
+    + '<button class="btn" onclick="saveAccount(' + (id ? '\'' + id + '\'' : 'null') + ')">保存する</button>');
+}
+function saveAccount(id) {
+  const name = document.getElementById('m-a-name').value.trim();
+  const initial = parseAmount(document.getElementById('m-a-initial').value) || 0;
+  if (!name) { toast('口座名を入力してください'); return; }
+  if (db.accounts.some(a => a.name === name && a.id !== id)) { toast('同じ名前の口座があります'); return; }
+  if (id) {
+    const a = db.accounts.find(x => x.id === id);
+    if (a.name !== name) {
+      db.entries.forEach(e => { if (e.account === a.name) e.account = name; if (e.toAccount === a.name) e.toAccount = name; });
+      db.recurring.forEach(r => { if (r.account === a.name) r.account = name; if (r.toAccount === a.name) r.toAccount = name; });
+    }
+    a.name = name; a.initial = initial;
+  } else db.accounts.push({ id: uid(), name, initial });
+  saveDb(); closeModal(); renderSettings(); toast('口座を保存しました');
+}
+function deleteAccount(id) {
+  const a = db.accounts.find(x => x.id === id); if (!a) return;
+  const used = db.entries.filter(e => e.account === a.name || e.toAccount === a.name).length;
+  if (!confirm('「' + a.name + '」を削除しますか？' + (used ? '\n（' + used + '件の明細に記録された口座名はそのまま残ります）' : ''))) return;
+  db.accounts = db.accounts.filter(x => x.id !== id);
+  saveDb(); renderSettings();
+}
+function moveAccount(i, dir) {
+  const j = i + dir; if (j < 0 || j >= db.accounts.length) return;
+  [db.accounts[i], db.accounts[j]] = [db.accounts[j], db.accounts[i]];
+  saveDb(); renderSettings();
+}
+
+/* ─── レシート読み取り設定 ───────────── */
+function setOcrMode(v) { db.settings.ocrMode = v === 'ai' ? 'ai' : 'browser'; saveDb(); renderSettings(); }
+function setOcrUrl(v) { db.settings.ocrUrl = v.trim(); saveDb(); toast('保存しました'); }
+
+/* ─── 暗証番号ロック ─────────────────── */
+async function hashPin(pin, salt) {
+  const text = salt + ':' + pin;
+  if (window.crypto && crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  let h = 5381; for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return 'x' + h.toString(16);
+}
+function openPinModal(mode) {
+  openModal(mode === 'set' ? '暗証番号を設定' : mode === 'change' ? '暗証番号を変更' : 'ロックを解除する',
+    (mode !== 'set' ? '<div class="field"><label>現在の暗証番号</label><input id="m-p-cur" class="input" type="password" inputmode="numeric" maxlength="8"></div>' : '')
+    + (mode !== 'remove' ? '<div class="field"><label>新しい暗証番号（4〜8桁の数字）</label><input id="m-p-new" class="input" type="password" inputmode="numeric" maxlength="8"></div>'
+      + '<div class="field"><label>もう一度入力</label><input id="m-p-new2" class="input" type="password" inputmode="numeric" maxlength="8"></div>' : '')
+    + '<div class="hint">暗証番号を忘れると開けなくなります。JSONバックアップは暗証番号なしで復元できるため、定期的に保存しておいてください。</div>'
+    + '<button class="btn" onclick="savePin(\'' + mode + '\')">' + (mode === 'remove' ? 'ロックを解除する' : '保存する') + '</button>');
+  const first = document.getElementById(mode !== 'set' ? 'm-p-cur' : 'm-p-new'); if (first) first.focus();
+}
+async function savePin(mode) {
+  if (mode !== 'set') {
+    const cur = document.getElementById('m-p-cur').value;
+    if (await hashPin(cur, db.settings.pin.salt) !== db.settings.pin.hash) { toast('現在の暗証番号が違います'); return; }
+  }
+  if (mode === 'remove') { db.settings.pin = null; saveDb(); closeModal(); renderSettings(); toast('ロックを解除しました'); return; }
+  const a = document.getElementById('m-p-new').value, b = document.getElementById('m-p-new2').value;
+  if (!/^\d{4,8}$/.test(a)) { toast('4〜8桁の数字で入力してください'); return; }
+  if (a !== b) { toast('暗証番号が一致しません'); return; }
+  const salt = uid();
+  db.settings.pin = { salt, hash: await hashPin(a, salt) };
+  saveDb(); closeModal(); renderSettings(); toast('暗証番号を設定しました');
+}
+let hiddenAt = null;
+function initLock() {
+  if (db.settings.pin) showLock();
+  document.addEventListener('visibilitychange', () => {
+    if (!db.settings.pin) return;
+    if (document.hidden) hiddenAt = Date.now();
+    else if (hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) showLock();
+  });
+}
+function showLock() {
+  document.getElementById('lock-pin').value = '';
+  document.getElementById('lock-err').textContent = '';
+  document.getElementById('lock').classList.add('open');
+  setTimeout(() => document.getElementById('lock-pin').focus(), 50);
+}
+async function unlock() {
+  const pin = document.getElementById('lock-pin').value;
+  if (!db.settings.pin || await hashPin(pin, db.settings.pin.salt) === db.settings.pin.hash) {
+    document.getElementById('lock').classList.remove('open'); hiddenAt = null;
+  } else {
+    document.getElementById('lock-err').textContent = '暗証番号が違います';
+    document.getElementById('lock-pin').value = '';
+  }
+}
+
+/* ─── レシート入力 ───────────────────── */
+let receipt = null;
+function openReceipt() {
+  const cats = catsOf('expense');
+  receipt = {
+    date: document.getElementById('in-date').value || todayStr(), store: '', memo: '',
+    account: document.getElementById('in-account').value || '',
+    lines: [{ category: cats[0] ? cats[0].name : 'その他', item: '', amount: '' }],
+    total: '', ocrText: '', status: ''
+  };
+  renderReceiptModal();
+}
+function readReceiptForm() {
+  if (!receipt || !document.getElementById('rc-date')) return;
+  receipt.date = document.getElementById('rc-date').value;
+  receipt.store = document.getElementById('rc-store').value.trim();
+  receipt.account = document.getElementById('rc-account').value;
+  receipt.memo = document.getElementById('rc-memo').value.trim();
+  receipt.total = document.getElementById('rc-total').value;
+  document.querySelectorAll('#rc-lines .rc-line').forEach((row, i) => {
+    const l = receipt.lines[i]; if (!l) return;
+    l.category = row.querySelector('.rc-cat').value;
+    l.item = row.querySelector('.rc-item').value.trim();
+    l.amount = row.querySelector('.rc-amt').value;
+  });
+}
+function renderReceiptModal() {
+  const r = receipt; if (!r) return;
+  const catBtn = '<label class="btn secondary sm file-btn">📷 レシートを読み取る<input type="file" accept="image/*" capture="environment" onchange="onReceiptImage(this)"></label>';
+  let html = '<div class="row2"><div class="field"><label>日付</label><input id="rc-date" class="input" type="date" value="' + esc(r.date) + '"></div>'
+    + '<div class="field"><label>店名</label><input id="rc-store" class="input" value="' + esc(r.store) + '" placeholder="例: ○○スーパー"></div></div>'
+    + '<div class="row2"><div class="field"><label>支払方法・口座</label><select id="rc-account" class="select">' + accountOptions(r.account, true) + '</select></div>'
+    + '<div class="field"><label>メモ</label><input id="rc-memo" class="input" value="' + esc(r.memo) + '"></div></div>'
+    + '<div class="btn-row" style="margin-bottom:6px">' + catBtn + '</div>'
+    + '<div id="ocr-status" class="ocr-status">' + esc(r.status) + '</div>'
+    + (r.ocrText ? '<details><summary class="small">読み取ったテキストを表示</summary><div class="ocr-text">' + esc(r.ocrText) + '</div></details>' : '')
+    + '<div class="card-title" style="margin-top:10px"><span>明細</span><button class="btn secondary sm" onclick="addReceiptLine()">＋ 行を追加</button></div>'
+    + '<div id="rc-lines">';
+  r.lines.forEach((l, i) => {
+    html += '<div class="rc-line">'
+      + '<select class="select rc-cat">' + catOptions('expense', l.category) + (catsOf('expense').find(c => c.name === l.category) ? '' : '<option selected>' + esc(l.category) + '</option>') + '</select>'
+      + '<input class="input rc-item" value="' + esc(l.item) + '" placeholder="品目">'
+      + '<input class="input num rc-amt" type="text" inputmode="numeric" value="' + esc(l.amount) + '" placeholder="金額" oninput="updateReceiptSum()">'
+      + '<button class="icon-btn danger" onclick="removeReceiptLine(' + i + ')" title="削除">×</button></div>';
+  });
+  html += '</div>'
+    + '<div class="rc-sum"><span>明細の合計</span><span class="v num" id="rc-sum">¥0</span></div>'
+    + '<div class="row2"><div class="field"><label>レシートの合計金額（確認用・任意）</label><input id="rc-total" class="input num" type="text" inputmode="numeric" value="' + esc(r.total) + '" oninput="updateReceiptSum()" placeholder="合計"></div>'
+    + '<div class="field"><label>&nbsp;</label><div id="rc-diff" class="small" style="padding-top:12px"></div></div></div>'
+    + '<button class="btn" onclick="saveReceipt()">まとめて保存する</button>';
+  openModal('レシート入力', html);
+  updateReceiptSum();
+}
+function updateReceiptSum() {
+  let sum = 0;
+  document.querySelectorAll('#rc-lines .rc-amt').forEach(el => { const v = parseAmount(el.value); if (v) sum += v; });
+  document.getElementById('rc-sum').textContent = fmtYen(sum);
+  const total = parseAmount(document.getElementById('rc-total').value);
+  const diff = document.getElementById('rc-diff');
+  if (total == null) { diff.textContent = ''; return; }
+  const d = sum - total;
+  diff.innerHTML = d === 0 ? '<span class="inc">✓ 合計と一致しています</span>' : '<span class="exp">合計と ' + fmtYen(Math.abs(d)) + ' ' + (d > 0 ? '多い' : '少ない') + 'です</span>';
+}
+function addReceiptLine() {
+  readReceiptForm();
+  const last = receipt.lines[receipt.lines.length - 1];
+  receipt.lines.push({ category: last ? last.category : (catsOf('expense')[0] || {}).name || 'その他', item: '', amount: '' });
+  renderReceiptModal();
+  const rows = document.querySelectorAll('#rc-lines .rc-item'); if (rows.length) rows[rows.length - 1].focus();
+}
+function removeReceiptLine(i) {
+  readReceiptForm();
+  receipt.lines.splice(i, 1);
+  if (!receipt.lines.length) receipt.lines.push({ category: (catsOf('expense')[0] || {}).name || 'その他', item: '', amount: '' });
+  renderReceiptModal();
+}
+function saveReceipt() {
+  readReceiptForm();
+  const r = receipt;
+  if (!r.date) { toast('日付を入力してください'); return; }
+  const lines = r.lines.map(l => ({ category: l.category || 'その他', item: l.item, amount: parseAmount(l.amount) })).filter(l => l.amount && l.amount > 0);
+  if (!lines.length) { toast('金額を入力した明細がありません'); return; }
+  const receiptId = uid();
+  lines.forEach(l => {
+    ensureCategory('expense', l.category, l.item);
+    db.entries.push({ id: uid(), date: r.date, type: 'expense', category: l.category, item: l.item, amount: l.amount, memo: r.memo, account: r.account, store: r.store || undefined, receiptId });
+  });
+  saveDb(); closeModal(); receipt = null;
+  document.getElementById('in-date').value = r.date;
+  toast('レシートの明細' + lines.length + '件を保存しました');
+  renderInput();
+}
+
+/* ─── レシート画像の読み取り（OCR / AI） ── */
+function setOcrStatus(msg) { if (receipt) receipt.status = msg; const el = document.getElementById('ocr-status'); if (el) el.textContent = msg; }
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
+    const s = document.createElement('script'); s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('スクリプトの読み込みに失敗しました')); document.head.appendChild(s);
+  });
+}
+function loadImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
+    img.src = url;
+  });
+}
+// 画像を縮小・グレースケール化し、OCR向けに二値化したキャンバスと、AI送信用のJPEGを作る
+function prepareImage(img, binarize) {
+  const maxW = 1600;
+  const scale = Math.min(1, maxW / Math.max(img.width, img.height));
+  const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  if (!binarize) return c;
+  const data = ctx.getImageData(0, 0, w, h), px = data.data;
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < px.length; i += 4) { const g = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000 | 0; px[i] = g; hist[g]++; }
+  // 大津の方法でしきい値を決める
+  const total = w * h; let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0, wB = 0, best = 0, thr = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t]; if (!wB) continue; const wF = total - wB; if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > best) { best = v; thr = t; }
+  }
+  for (let i = 0; i < px.length; i += 4) { const v = px[i] > thr ? 255 : 0; px[i] = px[i + 1] = px[i + 2] = v; }
+  ctx.putImageData(data, 0, 0);
+  return c;
+}
+async function onReceiptImage(input) {
+  const file = input.files && input.files[0]; input.value = '';
+  if (!file || !receipt) return;
+  readReceiptForm();
+  try {
+    setOcrStatus('画像を準備しています…');
+    const img = await loadImageFile(file);
+    let result;
+    if (db.settings.ocrMode === 'ai') {
+      if (!db.settings.ocrUrl) throw new Error('設定でAI読み取り用のURLを入力してください');
+      setOcrStatus('AIで読み取っています…（10〜30秒ほどかかります）');
+      const canvas = prepareImage(img, false);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      result = await ocrViaAi(dataUrl.split(',')[1]);
+    } else {
+      result = await ocrInBrowser(prepareImage(img, true));
+    }
+    applyOcrResult(result);
+  } catch (err) {
+    setOcrStatus('読み取りに失敗しました: ' + (err.message || err));
+  }
+}
+async function ocrInBrowser(canvas) {
+  setOcrStatus('OCRエンジンを読み込んでいます…（初回は日本語辞書のダウンロードに時間がかかります）');
+  await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+  const worker = await Tesseract.createWorker('jpn', 1, {
+    logger: m => {
+      if (m.status === 'recognizing text') setOcrStatus('文字を認識しています… ' + Math.round((m.progress || 0) * 100) + '%');
+      else if (m.status && m.status.includes('loading')) setOcrStatus('辞書を読み込んでいます… ' + Math.round((m.progress || 0) * 100) + '%');
+    }
+  });
+  try {
+    await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
+    const { data } = await worker.recognize(canvas);
+    return Object.assign(parseReceiptText(data.text || ''), { ocrText: data.text || '' });
+  } finally { await worker.terminate(); }
+}
+async function ocrViaAi(base64) {
+  const res = await fetch(db.settings.ocrUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ image: base64, mime: 'image/jpeg', categories: catsOf('expense').map(c => c.name) })
+  });
+  if (!res.ok) throw new Error('通信エラー (' + res.status + ')');
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'AI読み取りに失敗しました');
+  const d = json.data || {};
+  return {
+    date: parseDate(d.date || '') || null, store: d.store || '', total: d.total != null ? Math.round(Number(d.total)) : null,
+    lines: (d.items || []).map(it => ({ item: String(it.name || ''), amount: Math.round(Number(it.amount) || 0), category: it.category || '' })).filter(l => l.amount > 0),
+    ocrText: ''
+  };
+}
+function applyOcrResult(res) {
+  const r = receipt; if (!r) return;
+  if (res.date) r.date = res.date;
+  if (res.store) r.store = res.store;
+  if (res.total != null) r.total = String(res.total);
+  r.ocrText = res.ocrText || '';
+  if (res.lines.length) {
+    const defCat = r.lines.length && r.lines[0].category ? r.lines[0].category : ((catsOf('expense')[0] || {}).name || 'その他');
+    r.lines = res.lines.map(l => ({ category: l.category && catsOf('expense').find(c => c.name === l.category) ? l.category : defCat, item: l.item, amount: String(l.amount) }));
+    r.status = res.lines.length + '件の品目を読み取りました。内容を確認・修正してから保存してください。';
+  } else if (res.total != null) {
+    r.lines = [{ category: (r.lines[0] || {}).category || 'その他', item: r.store || '', amount: String(res.total) }];
+    r.status = '品目は読み取れませんでしたが、合計金額を1行として入れました。';
+  } else {
+    r.status = '金額を読み取れませんでした。明るい場所でレシートを平らにして、文字が大きく写るように撮影してください。';
+  }
+  renderReceiptModal();
+}
+// OCRテキストから 日付・店名・合計・品目行 を推定する
+function parseReceiptText(text) {
+  const res = { date: null, store: '', total: null, lines: [] };
+  const rawLines = text.split(/\r?\n/).map(l => toHalfWidth(l).replace(/[|｜]/g, '').trim()).filter(Boolean);
+  const skipRe = /小計|お預|預り|預かり|お釣|釣銭|釣り|つり|現金|クレジット|カード|ポイント|還元|税率|消費税|内税|外税|対象|税抜|税込|割引|値引|点数|領収|レシート|電話|TEL|登録番号|No\.|レジ|担当|様|ありがとう|お買上|買上点|残高|支払|チャージ|QR|Pay|キャッシュレス/i;
+  const totalRe = /合計|合計金額|お買上げ?額|お支払|総額|^計/;
+  const amtRe = /[¥\\￥]?\s*(-?\d{1,3}(?:[,.]\d{3})+|-?\d+)\s*(?:円)?\s*[*※軽]?\s*$/;
+  for (const line of rawLines) {
+    const compact = line.replace(/\s+/g, '');
+    if (!res.date) {
+      let m = compact.match(/(20\d{2})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})/) || (function () { const s = compact.match(/(?:^|\D)(\d{2})[\/\-.](\d{2})[\/\-.](\d{2})(?:\D|$)/); return s ? [s[0], '20' + s[1], s[2], s[3]] : null; })();
+      if (m) { const d = parseDate(m[1] + '/' + m[2] + '/' + m[3]); if (d) { res.date = d; continue; } }
+    }
+    const m = line.match(amtRe);
+    if (m) {
+      const amount = parseAmount(m[1]);
+      if (amount == null) continue;
+      if (/小計/.test(compact)) continue;
+      if (totalRe.test(compact)) { if (res.total == null && amount > 0) res.total = amount; continue; }
+      if (skipRe.test(compact)) continue;
+      if (amount <= 0 || amount > 1000000) continue;
+      let name = line.slice(0, m.index).replace(/^[\s*※#\-・.]+|[\s*※¥\\￥\-・.]+$/g, '').replace(/^\d{1,4}\s+/, '').trim();
+      if (/^\d+$/.test(name) || name.length < 1) name = '';
+      if (res.lines.length < 40) res.lines.push({ item: toFullKana(name).slice(0, 40), amount });
+    } else if (!res.store && compact.length >= 2 && compact.length <= 30 && !/^[\d\-\/:.()]+$/.test(compact) && !skipRe.test(compact) && /[ぁ-んァ-ヶ一-龠A-Za-z]/.test(compact)) {
+      res.store = toFullKana(compact);
+    }
+  }
+  // 合計が分かっていて品目の合計がそれを大きく超える場合は、税込表示など重複行が混ざっている可能性が高い
+  if (res.total != null && res.lines.length) {
+    const sum = res.lines.reduce((s, l) => s + l.amount, 0);
+    if (sum > res.total * 1.5) res.lines = res.lines.filter(l => l.amount !== res.total);
+  }
+  return res;
+}
+
 /* ─── 起動 ───────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('in-date').value = todayStr();
@@ -1411,6 +1985,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeModal(); });
   postRecurring();
   showView('input');
+  initLock();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
