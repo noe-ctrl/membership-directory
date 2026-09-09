@@ -240,6 +240,136 @@
     }
     .match-btn:hover { background: #e0e7ff; }
 
+
+    /* ─── AI社員 ─────────────────────────── */
+    .ai-fab {
+      position: fixed; right: 16px; bottom: 16px; z-index: 30;
+      display: none; align-items: center; gap: 8px;
+      border: none;
+      background: var(--accent); color: #fff;
+      border-radius: 999px;
+      padding: 14px 18px;
+      font-size: 14px; font-weight: 700;
+      box-shadow: 0 10px 28px rgba(79,70,229,.35);
+      cursor: pointer;
+    }
+    .ai-fab.show { display: inline-flex; }
+    .ai-fab:active { transform: scale(.97); }
+
+    .ai-panel {
+      position: fixed; right: 16px; bottom: 16px; z-index: 40;
+      width: min(420px, calc(100vw - 32px));
+      height: min(660px, calc(100vh - 32px));
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.18);
+      display: none; flex-direction: column; overflow: hidden;
+    }
+    .ai-panel.open { display: flex; }
+    @media (max-width: 600px) {
+      .ai-panel { right: 0; bottom: 0; width: 100vw; height: 100dvh; border-radius: 0; border: none; }
+    }
+
+    .ai-head {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+      padding: 14px 14px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .ai-title { font-size: 16px; font-weight: 800; }
+    .ai-sub { font-size: 12px; color: var(--sub); margin-top: 3px; line-height: 1.5; }
+    .ai-head-btns { display: flex; gap: 6px; flex-shrink: 0; }
+    .ai-icon-btn {
+      width: 34px; height: 34px;
+      border: 1px solid var(--line); background: #fff; color: var(--text);
+      border-radius: 10px; font-size: 16px; cursor: pointer; line-height: 1;
+    }
+    .ai-icon-btn:hover { background: var(--chip); }
+
+    .ai-log {
+      flex: 1; overflow-y: auto;
+      padding: 14px;
+      display: flex; flex-direction: column; gap: 10px;
+      background: #faf8f4;
+      -webkit-overflow-scrolling: touch;
+    }
+    .ai-msg {
+      max-width: 88%;
+      padding: 10px 13px;
+      border-radius: 16px;
+      font-size: 14px; line-height: 1.65;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .ai-msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 6px; }
+    .ai-msg.bot  { align-self: flex-start; background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 6px; }
+    .ai-msg.ai-err  { align-self: flex-start; background: #fdecea; color: var(--danger); border: 1px solid #f5c6c2; }
+
+    .ai-typing { display: inline-flex; gap: 4px; align-items: center; height: 18px; }
+    .ai-typing i {
+      width: 6px; height: 6px; border-radius: 50%; background: #b8b3ab;
+      animation: ai-bounce 1.2s infinite ease-in-out;
+    }
+    .ai-typing i:nth-child(2) { animation-delay: .15s; }
+    .ai-typing i:nth-child(3) { animation-delay: .3s; }
+    @keyframes ai-bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .5; } 40% { transform: translateY(-4px); opacity: 1; } }
+
+    .ai-recs { align-self: stretch; display: flex; flex-direction: column; gap: 8px; }
+    .ai-rec {
+      display: flex; gap: 10px; align-items: center;
+      background: #fff; border: 1px solid #c7d2fe;
+      border-radius: 14px; padding: 9px 10px;
+      cursor: pointer; text-align: left; width: 100%;
+      font: inherit; color: var(--text);
+    }
+    .ai-rec:hover { background: var(--accent-soft); }
+    .ai-rec-photo {
+      width: 44px; height: 44px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
+      background: linear-gradient(135deg, #efebe3, #e5dfd3);
+    }
+    .ai-rec-body { min-width: 0; flex: 1; }
+    .ai-rec-name { font-size: 14px; font-weight: 800; line-height: 1.3; }
+    .ai-rec-head { font-size: 12px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ai-rec-reason { font-size: 12px; color: var(--accent); margin-top: 3px; line-height: 1.4; }
+    .ai-rec-all {
+      align-self: flex-start;
+      margin-top: 2px;
+      border: 1px solid #c7d2fe; background: var(--accent-soft); color: var(--accent);
+      border-radius: 10px; padding: 7px 12px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .ai-rec-all:hover { background: #e0e7ff; }
+
+    .ai-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 10px; background: #faf8f4; }
+    .ai-chips:empty { display: none; }
+    .ai-chip { cursor: pointer; font: inherit; font-size: 12px; }
+    .ai-chip:hover { background: var(--accent-soft); border-color: #c7d2fe; color: var(--accent); }
+
+    .ai-form {
+      display: flex; gap: 8px; align-items: flex-end;
+      padding: 10px 12px;
+      border-top: 1px solid var(--line);
+      background: #fff;
+    }
+    .ai-input {
+      flex: 1; resize: none;
+      border: 1px solid #d8d2c8; background: #fff;
+      border-radius: 14px;
+      padding: 11px 13px;
+      font: inherit; font-size: 15px; line-height: 1.45;
+      max-height: 120px;
+      outline: none;
+    }
+    .ai-input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,70,229,.08); }
+    .ai-send {
+      border: none; background: var(--accent); color: #fff;
+      border-radius: 14px; padding: 12px 16px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      white-space: nowrap;
+    }
+    .ai-send:disabled { opacity: .5; cursor: default; }
+    .ai-note { font-size: 11px; color: var(--sub); padding: 0 14px 10px; background: #fff; }
+
     .empty {
       background: #fff; border: 1px solid var(--line);
       border-radius: 18px; padding: 36px 20px;
@@ -295,9 +425,43 @@
     <button class="match-back-btn" onclick="clearMatch()">× 通常表示に戻る</button>
   </div>
 
+  <!-- AI社員おすすめバナー（AIフィルタ中のみ表示） -->
+  <div id="ai-banner" class="match-banner" style="display:none">
+    <div class="match-banner-text">🤖 AI社員のおすすめ（<span id="ai-banner-count"></span>名）を表示中</div>
+    <button class="match-back-btn" onclick="clearAiFilter()">× 通常表示に戻る</button>
+  </div>
+
   <div class="wrap">
     <div id="list"></div>
   </div>
+</div>
+
+<!-- ─── AI社員 ───────────────────────────────── -->
+<button id="ai-fab" class="ai-fab" onclick="openAi()" aria-label="AI社員に相談">🤖 AI社員に相談</button>
+
+<div id="ai-panel" class="ai-panel" role="dialog" aria-label="AI社員">
+  <div class="ai-head">
+    <div>
+      <div class="ai-title">🤖 AI社員</div>
+      <div class="ai-sub">会員名鑑をもとに、人探し・マッチング・紹介文づくりをお手伝いします。</div>
+    </div>
+    <div class="ai-head-btns">
+      <button class="ai-icon-btn" onclick="resetAi()" title="会話をリセット" aria-label="会話をリセット">↺</button>
+      <button class="ai-icon-btn" onclick="closeAi()" title="閉じる" aria-label="閉じる">×</button>
+    </div>
+  </div>
+  <div id="ai-log" class="ai-log" aria-live="polite"></div>
+  <div id="ai-chips" class="ai-chips"></div>
+  <form class="ai-form" onsubmit="sendAi(event)">
+    <textarea
+      id="ai-input" class="ai-input" rows="1"
+      placeholder="例：Web制作を頼める人を探して"
+      onkeydown="aiKeydown(event)"
+      oninput="aiAutosize()"
+    ></textarea>
+    <button id="ai-send" class="ai-send" type="submit">送信</button>
+  </form>
+  <div class="ai-note">AIの回答は名鑑の登録内容に基づく参考情報です。連絡先は各会員カードをご確認ください。</div>
 </div>
 
 <script>
@@ -347,6 +511,7 @@
       allData = Array.isArray(json.data) ? json.data : [];
       document.getElementById('login').style.display = 'none';
       document.getElementById('app').style.display   = 'block';
+      document.getElementById('ai-fab').classList.add('show');
       render();
     } catch (err) {
       sessionStorage.removeItem('memberPw');
@@ -357,7 +522,11 @@
   }
 
   function logout() {
-    allData = []; matchTarget = null;
+    allData = []; matchTarget = null; aiFilterIds = null;
+    aiHistory = [];
+    document.getElementById('ai-log').innerHTML = '';
+    closeAi();
+    document.getElementById('ai-fab').classList.remove('show');
     sessionStorage.removeItem('memberPw');
     document.getElementById('pw').value     = '';
     document.getElementById('search').value = '';
@@ -389,6 +558,7 @@
   // カード上のボタンから呼ばれる（_cardStore のインデックスで参照）
   function _handleMatch(idx) {
     matchTarget = _cardStore[idx];
+    aiFilterIds = null;
     document.getElementById('search').value = '';
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -413,7 +583,19 @@
     const q = (document.getElementById('search').value || '').trim().toLowerCase();
 
     let displayData;
-    if (matchTarget) {
+    const aiBanner = document.getElementById('ai-banner');
+    if (aiFilterIds) {
+      const idSet = new Set(aiFilterIds);
+      displayData = allData
+        .map((m, i) => ({ ...m, _score: null, _aiId: 'M' + (i + 1) }))
+        .filter(m => idSet.has(m._aiId))
+        .filter(m => !q || getSearchText(m).includes(q));
+
+      aiBanner.style.display = 'flex';
+      document.getElementById('ai-banner-count').textContent = aiFilterIds.length;
+      document.getElementById('match-banner').style.display = 'none';
+    } else if (matchTarget) {
+      aiBanner.style.display = 'none';
       displayData = allData
         .filter(m => !(m.name === matchTarget.name && m.email === matchTarget.email))
         .map(m => ({ ...m, _score: calcMatchScore(matchTarget, m) }))
@@ -423,6 +605,7 @@
       document.getElementById('match-banner').style.display = 'flex';
       document.getElementById('match-name').textContent = matchTarget.name;
     } else {
+      aiBanner.style.display = 'none';
       displayData = allData
         .map(m => ({ ...m, _score: null }))
         .filter(m => !q || getSearchText(m).includes(q));
@@ -430,9 +613,11 @@
       document.getElementById('match-banner').style.display = 'none';
     }
 
-    document.getElementById('count').textContent = matchTarget
-      ? 'マッチング: ' + displayData.length + '件'
-      : displayData.length + '件';
+    document.getElementById('count').textContent = aiFilterIds
+      ? 'AI社員のおすすめ: ' + displayData.length + '件'
+      : matchTarget
+        ? 'マッチング: ' + displayData.length + '件'
+        : displayData.length + '件';
 
     document.getElementById('list').innerHTML = displayData.length
       ? '<div class="grid">' + displayData.map(renderCard).join('') + '</div>'
@@ -511,6 +696,196 @@
       + '<div class="section">' + venue + email + tel + facebook + lineId + '</div>'
       + chips + detail + timestamp + matchBtn
       + '</div></div>';
+  }
+
+  /* ─── AI社員 ─────────────────────────── */
+  let aiHistory   = [];     // {role:'user'|'assistant', content}
+  let aiPending   = false;
+  let aiFilterIds = null;   // 一覧をAIのおすすめだけに絞る: ['M3', ...]
+
+  const AI_QUICK_PROMPTS = [
+    'Web制作を頼める人を探して',
+    '集客・マーケティングが得意な人は？',
+    '相性の良い会員同士を組み合わせて',
+    '自己紹介文の作成を手伝って'
+  ];
+  const AI_WELCOME =
+    'こんにちは！AI社員です🤖\n' +
+    '会員名鑑をもとに「○○ができる人を探して」「○○さんと相性の良い人は？」「紹介文を作って」などのご相談に対応します。\n' +
+    'お気軽にどうぞ！';
+
+  function openAi() {
+    document.getElementById('ai-panel').classList.add('open');
+    document.getElementById('ai-fab').classList.remove('show');
+    if (!aiHistory.length && !document.getElementById('ai-log').children.length) {
+      appendAiMsg('bot', AI_WELCOME);
+      renderAiChips();
+    }
+    if (window.matchMedia('(min-width: 601px)').matches) {
+      document.getElementById('ai-input').focus();
+    }
+  }
+  function closeAi() {
+    document.getElementById('ai-panel').classList.remove('open');
+    if (allData.length) document.getElementById('ai-fab').classList.add('show');
+  }
+  function resetAi() {
+    if (aiPending) return;
+    aiHistory = [];
+    document.getElementById('ai-log').innerHTML = '';
+    appendAiMsg('bot', AI_WELCOME);
+    renderAiChips();
+  }
+
+  function renderAiChips() {
+    document.getElementById('ai-chips').innerHTML = AI_QUICK_PROMPTS
+      .map(q => '<button type="button" class="chip ai-chip" onclick="quickAi(this)">' + esc(q) + '</button>')
+      .join('');
+  }
+  function quickAi(btn) {
+    document.getElementById('ai-input').value = btn.textContent;
+    sendAi();
+  }
+  function aiKeydown(e) {
+    // 日本語IMEの変換確定Enterでは送信しない（isComposing / keyCode 229）
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      sendAi();
+    }
+  }
+  function aiAutosize() {
+    const el = document.getElementById('ai-input');
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+  function setAiPending(v) {
+    aiPending = v;
+    document.getElementById('ai-send').disabled = v;
+    document.getElementById('ai-input').disabled = v;
+  }
+  function scrollAiLog() {
+    const log = document.getElementById('ai-log');
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function appendAiMsg(kind, text, recommended) {
+    const log = document.getElementById('ai-log');
+    const el  = document.createElement('div');
+    el.className = 'ai-msg ' + kind;
+    el.textContent = text;
+    log.appendChild(el);
+
+    if (recommended && recommended.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'ai-recs';
+      wrap.innerHTML = recommended.map(renderAiRec).join('')
+        + '<button type="button" class="ai-rec-all" onclick="applyAiFilter(' + esc(JSON.stringify(recommended.map(r => r.id))) + ')">📋 この' + recommended.length + '名を一覧で表示</button>';
+      log.appendChild(wrap);
+    }
+    scrollAiLog();
+    return el;
+  }
+  function appendAiTyping() {
+    const log = document.getElementById('ai-log');
+    const el  = document.createElement('div');
+    el.className = 'ai-msg bot';
+    el.innerHTML = '<span class="ai-typing"><i></i><i></i><i></i></span>';
+    log.appendChild(el);
+    scrollAiLog();
+    return el;
+  }
+
+  function aiMemberById(id) {
+    const idx = parseInt(String(id).replace(/^M/, ''), 10) - 1;
+    return (idx >= 0 && idx < allData.length) ? allData[idx] : null;
+  }
+  function renderAiRec(rec) {
+    const m = aiMemberById(rec.id);
+    if (!m) return '';
+    const photo = m.photo
+      ? '<img class="ai-rec-photo" src="' + esc(m.photo) + '" alt="" loading="lazy">'
+      : '<div class="ai-rec-photo"></div>';
+    const head = [m.company, m.job].filter(Boolean).map(esc).join(' / ');
+    return '<button type="button" class="ai-rec" onclick="applyAiFilter([' + esc(JSON.stringify(rec.id)) + '])">'
+      + photo
+      + '<div class="ai-rec-body">'
+      +   '<div class="ai-rec-name">' + esc(m.name) + '</div>'
+      +   (head ? '<div class="ai-rec-head">' + head + '</div>' : '')
+      +   (rec.reason ? '<div class="ai-rec-reason">💡 ' + esc(rec.reason) + '</div>' : '')
+      + '</div></button>';
+  }
+
+  // AIのおすすめだけを一覧に表示
+  function applyAiFilter(ids) {
+    aiFilterIds = Array.isArray(ids) ? ids : [ids];
+    matchTarget = null;
+    document.getElementById('search').value = '';
+    render();
+    closeAi();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function clearAiFilter() {
+    aiFilterIds = null;
+    render();
+  }
+
+  // AIに渡す会員情報（連絡先・写真は送らない）
+  function aiMemberPayload(m) {
+    return {
+      name: m.name, company: m.company, job: m.job,
+      type: m.type, venue: m.venue, needs: m.needs, detail: m.detail
+    };
+  }
+
+  async function sendAi(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (aiPending) return;
+
+    const input = document.getElementById('ai-input');
+    const text  = input.value.trim();
+    if (!text) return;
+
+    const pw = sessionStorage.getItem('memberPw');
+    if (!pw) { appendAiMsg('ai-err', 'セッションが切れました。もう一度ログインしてください。'); return; }
+
+    input.value = '';
+    aiAutosize();
+    document.getElementById('ai-chips').innerHTML = '';
+    appendAiMsg('user', text);
+    aiHistory.push({ role: 'user', content: text });
+
+    setAiPending(true);
+    const typing = appendAiTyping();
+    try {
+      // GASのdoPostへ。Content-Typeを付けない（プリフライト回避、GAS側はtext/plainとして受ける）
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action:   'chat',
+          password: pw,
+          members:  allData.map(aiMemberPayload),
+          messages: aiHistory.slice(-12)
+        })
+      });
+      const raw = await res.text();
+      let json;
+      try { json = JSON.parse(raw); }
+      catch (_) {
+        throw new Error('AI社員はまだ利用できません。管理者の方は gas/ai-employee.gs を GAS プロジェクトに追加し、再デプロイしてください。');
+      }
+      if (!json.ok) throw new Error(json.error || 'AI社員との通信に失敗しました');
+
+      typing.remove();
+      aiHistory.push({ role: 'assistant', content: json.reply || '' });
+      appendAiMsg('bot', json.reply || '（回答を取得できませんでした）', json.recommended || []);
+    } catch (err) {
+      typing.remove();
+      aiHistory.pop(); // 失敗した質問は履歴から外し、再送しやすくする
+      appendAiMsg('ai-err', err.message || 'エラーが発生しました');
+    } finally {
+      setAiPending(false);
+      if (window.matchMedia('(min-width: 601px)').matches) input.focus();
+    }
   }
 </script>
 </body>
