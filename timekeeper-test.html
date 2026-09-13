@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>タイムキーパー係 効果測定テスト</title>
+  <style>
+    :root {
+      --bg: #fff6f8;
+      --card: #ffffff;
+      --line: #f3d6de;
+      --text: #222222;
+      --sub: #6b6b6b;
+      --accent: #e8457a;
+      --accent-dark: #c92f62;
+      --accent-soft: #ffe3ea;
+      --ok: #16a34a;
+      --ok-soft: #e7f8ec;
+      --ng: #dc2626;
+      --ng-soft: #fde8e8;
+      --note: #fff4c2;
+      --shadow: 0 8px 24px rgba(200, 60, 100, .10);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+      line-height: 1.6;
+    }
+
+    .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
+
+    /* ─── Header ───────────────────────── */
+    .header { text-align: center; padding: 8px 0 14px; }
+    .badge {
+      display: inline-block;
+      background: var(--accent);
+      color: #fff;
+      font-size: 12px; font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 999px;
+      letter-spacing: .05em;
+    }
+    .header h1 {
+      font-size: 22px; font-weight: 800;
+      margin: 8px 0 2px;
+      color: var(--accent-dark);
+      letter-spacing: .02em;
+    }
+    .header p { margin: 0; font-size: 13px; color: var(--sub); }
+
+    /* ─── Card ─────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px 18px;
+      margin-bottom: 14px;
+    }
+    .card h2 {
+      font-size: 16px; font-weight: 800;
+      margin: 0 0 10px;
+      color: var(--accent-dark);
+    }
+    .card p { margin: 0 0 8px; font-size: 14px; }
+    .muted { color: var(--sub); font-size: 13px; }
+
+    .input {
+      width: 100%;
+      border: 1px solid #ecc4cf;
+      background: #fff;
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 16px;
+      outline: none;
+      margin-top: 6px;
+    }
+    .input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(232,69,122,.12); }
+    label.field { display: block; font-size: 13px; font-weight: 700; margin-top: 12px; }
+
+    .btn {
+      width: 100%; margin-top: 12px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn:active { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: default; }
+    .btn.secondary {
+      background: #fff;
+      color: var(--accent-dark);
+      border: 1px solid var(--accent);
+    }
+    .btn.ghost {
+      background: transparent;
+      color: var(--sub);
+      border: 1px solid var(--line);
+    }
+
+    /* ─── Progress ─────────────────────── */
+    .progress {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 13px; color: var(--sub); margin-bottom: 8px;
+    }
+    .bar { height: 8px; background: #fbe1e8; border-radius: 999px; overflow: hidden; margin-bottom: 14px; }
+    .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+
+    /* ─── Question ─────────────────────── */
+    .qtype {
+      display: inline-block;
+      font-size: 11px; font-weight: 700;
+      color: var(--accent-dark);
+      background: var(--accent-soft);
+      padding: 3px 10px; border-radius: 999px;
+      margin-bottom: 8px;
+    }
+    .qsection { font-size: 12px; color: var(--sub); margin-left: 8px; }
+    .qtext { font-size: 16px; font-weight: 700; margin: 0 0 14px; line-height: 1.6; }
+
+    .choices { display: flex; flex-direction: column; gap: 8px; }
+    .choice {
+      display: flex; align-items: flex-start; gap: 10px;
+      border: 1.5px solid var(--line);
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 15px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      color: var(--text);
+      font-family: inherit;
+      line-height: 1.5;
+      transition: border-color .12s, background .12s;
+    }
+    .choice:hover { border-color: #f0a9bf; }
+    .choice.selected { border-color: var(--accent); background: var(--accent-soft); }
+    .choice .mark {
+      flex: none;
+      width: 22px; height: 22px;
+      border: 2px solid #e6b6c4;
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 800;
+      color: #fff;
+      margin-top: 1px;
+    }
+    .choice.multi .mark { border-radius: 6px; }
+    .choice.selected .mark { background: var(--accent); border-color: var(--accent); }
+    .choice.correct { border-color: var(--ok); background: var(--ok-soft); }
+    .choice.correct .mark { background: var(--ok); border-color: var(--ok); }
+    .choice.wrong { border-color: var(--ng); background: var(--ng-soft); }
+    .choice.wrong .mark { background: var(--ng); border-color: var(--ng); }
+    .choice.missed { border-color: var(--ok); border-style: dashed; }
+    .choice:disabled { cursor: default; }
+
+    .feedback {
+      margin-top: 14px;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 14px;
+      display: none;
+    }
+    .feedback.show { display: block; }
+    .feedback.ok { background: var(--ok-soft); border: 1px solid #b7e4c4; }
+    .feedback.ng { background: var(--ng-soft); border: 1px solid #f3b4b4; }
+    .feedback .verdict { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+    .feedback.ok .verdict { color: var(--ok); }
+    .feedback.ng .verdict { color: var(--ng); }
+    .feedback .ref { font-size: 12px; color: var(--sub); margin-top: 6px; }
+
+    /* ─── Result ───────────────────────── */
+    .score-hero { text-align: center; padding: 10px 0 6px; }
+    .score-num { font-size: 52px; font-weight: 900; color: var(--accent-dark); line-height: 1; }
+    .score-num small { font-size: 20px; color: var(--sub); font-weight: 700; }
+    .pass, .fail {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 6px 18px;
+      border-radius: 999px;
+      font-weight: 800; font-size: 15px;
+    }
+    .pass { background: var(--ok-soft); color: var(--ok); }
+    .fail { background: var(--ng-soft); color: var(--ng); }
+    .score-msg { margin-top: 12px; font-size: 14px; }
+
+    .sec-list { display: flex; flex-direction: column; gap: 8px; }
+    .sec-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    .sec-row .name { flex: 1.6; min-width: 0; }
+    .sec-row .mini { flex: 1; height: 8px; background: #fbe1e8; border-radius: 999px; overflow: hidden; }
+    .sec-row .mini > div { height: 100%; background: var(--accent); }
+    .sec-row .cnt { width: 44px; text-align: right; color: var(--sub); }
+
+    .review { display: flex; flex-direction: column; gap: 10px; }
+    .rv {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+    .rv.ok { border-left: 5px solid var(--ok); }
+    .rv.ng { border-left: 5px solid var(--ng); }
+    .rv .q { font-weight: 700; margin-bottom: 4px; }
+    .rv .a { color: var(--sub); }
+    .rv .a b { color: var(--text); }
+
+    .history { font-size: 13px; }
+    .history table { width: 100%; border-collapse: collapse; }
+    .history th, .history td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+    .history th { color: var(--sub); font-weight: 700; font-size: 12px; }
+    .history td.r { text-align: right; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 24px;
+      transform: translateX(-50%);
+      background: #333; color: #fff;
+      font-size: 13px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+      z-index: 20;
+    }
+    .toast.show { opacity: 1; }
+
+    .footer { text-align: center; font-size: 12px; color: var(--sub); margin-top: 24px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <span class="badge">守成クラブ ヒルノ渋谷会場</span>
+    <h1>タイムキーパー係 効果測定テスト</h1>
+    <p>マニュアルの理解度をチェックしましょう</p>
+  </div>
+
+  <!-- ─── スタート画面 ─── -->
+  <section id="screen-start">
+    <div class="card">
+      <h2>テストについて</h2>
+      <p>「タイムキーパー係マニュアル」の内容から <b id="q-total">12</b> 問出題します。</p>
+      <p>単一選択・複数選択・○×の3種類です。1問ごとに正解と解説が表示されます。</p>
+      <p><b>合格ライン：正答率 <span id="pass-line">80</span>% 以上</b></p>
+      <p class="muted">※ 選択肢の順番は毎回シャッフルされます。何度でも受けられます。</p>
+
+      <label class="field" for="name">お名前（任意）</label>
+      <input id="name" class="input" type="text" placeholder="例：守成 太郎" autocomplete="name">
+
+      <button class="btn" onclick="startTest()">テストを始める</button>
+    </div>
+
+    <div class="card history" id="history-card">
+      <h2>受験履歴（この端末）</h2>
+      <div id="history-body"></div>
+    </div>
+  </section>
+
+  <!-- ─── 問題画面 ─── -->
+  <section id="screen-quiz" class="hidden">
+    <div class="progress">
+      <span id="prog-label">問 1 / 12</span>
+      <span id="prog-score">正解 0</span>
+    </div>
+    <div class="bar"><div id="prog-bar"></div></div>
+
+    <div class="card">
+      <div>
+        <span class="qtype" id="q-type">単一選択</span>
+        <span class="qsection" id="q-section"></span>
+      </div>
+      <p class="qtext" id="q-text"></p>
+      <div class="choices" id="choices"></div>
+
+      <div class="feedback" id="feedback">
+        <div class="verdict" id="fb-verdict"></div>
+        <div id="fb-text"></div>
+        <div class="ref" id="fb-ref"></div>
+      </div>
+
+      <button class="btn" id="btn-answer" onclick="submitAnswer()" disabled>回答する</button>
+      <button class="btn hidden" id="btn-next" onclick="nextQuestion()">次の問題へ</button>
+    </div>
+
+    <button class="btn ghost" onclick="abortTest()">中断してトップに戻る</button>
+  </section>
+
+  <!-- ─── 結果画面 ─── -->
+  <section id="screen-result" class="hidden">
+    <div class="card">
+      <div class="score-hero">
+        <div class="muted" id="res-name"></div>
+        <div class="score-num"><span id="res-score">0</span><small> / <span id="res-total">12</span></small></div>
+        <div class="muted">正答率 <b id="res-rate">0</b>%</div>
+        <div id="res-badge"></div>
+        <div class="score-msg" id="res-msg"></div>
+      </div>
+      <button class="btn" onclick="copyResult()">結果をコピー（代表へ報告用）</button>
+      <button class="btn secondary" onclick="startTest()">もう一度受ける</button>
+      <button class="btn ghost" onclick="goStart()">トップに戻る</button>
+    </div>
+
+    <div class="card">
+      <h2>セクション別の正答</h2>
+      <div class="sec-list" id="res-sections"></div>
+    </div>
+
+    <div class="card">
+      <h2>振り返り</h2>
+      <div class="review" id="res-review"></div>
+    </div>
+  </section>
+
+  <div class="footer">みんなのサポートで、気持ちの良い例会になります！</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  /* ─── 設定 ──────────────────────────── */
+  const PASS_RATE = 0.8;            // 合格ライン（正答率）
+  const HISTORY_KEY = 'tk_test_history';
+  const HISTORY_MAX = 20;
+  // ★ 受験結果を集計したい場合は、GAS などの受け口 URL を設定してください（空なら送信しません）
+  const RESULT_POST_URL = '';
+
+  /* ─── 問題データ ─────────────────────
+     type: 'single' | 'multi' | 'tf'
+     answer: 正解の選択肢インデックス（multi は配列）
+     section: マニュアルの該当セクション
+  ─────────────────────────────────────── */
+  const QUESTIONS = [
+    {
+      section: 'あなたの役割',
+      type: 'single',
+      text: 'タイムキーパー係の役割として、最も適切なものはどれですか？',
+      choices: [
+        '例会中の各プログラムが時間通りに進行するように時間を管理し、ベルでお知らせする',
+        '司会者に代わってプログラムの進行を担当する',
+        '各発表者の話の内容をメモして記録に残す',
+        '会場の受付と参加者の案内を行う'
+      ],
+      answer: 0,
+      explain: 'タイムキーパー係は「時間を管理し、ベルでお知らせする係」です。例会を時間通りに進行させるためのとても重要な役割です。'
+    },
+    {
+      section: 'あなたの役割',
+      type: 'single',
+      text: 'マニュアルで例として挙げられている「1人あたりのコメント時間」は何秒ですか？',
+      choices: ['10秒', '20秒', '30秒', '60秒'],
+      answer: 1,
+      explain: '「1人20秒のコメントなど、細かく計算されたプログラム」に沿って会が進むよう時間を提示します。'
+    },
+    {
+      section: 'あなたの役割',
+      type: 'single',
+      text: '時間を提示したりベルを鳴らしたりする際、どこにいるのが基本ですか？',
+      choices: ['マイクの近く', '自分の席', '会場の後方', '受付付近'],
+      answer: 0,
+      explain: '「マイクの近くで時間を提示し、ベルを鳴らします」。発表者にはっきり伝わる位置にいることが大切です。'
+    },
+    {
+      section: 'なぜタイムキーパー係が大切なの？',
+      type: 'single',
+      text: '「時間通りに進行するスピード感」は何につながる、とマニュアルに書かれていますか？',
+      choices: ['参加者への信頼', '会費の削減', '発表者の緊張', '来場者数の増加'],
+      answer: 0,
+      explain: '「時間通りに進行するスピード感は、参加者への信頼につながります」。時間を守ることは次の方への思いやりでもあります。'
+    },
+    {
+      section: 'なぜタイムキーパー係が大切なの？',
+      type: 'tf',
+      text: '熱量が高くて話が長くなってしまう方には、その方の気持ちを尊重して時間を守らなくてもよい。',
+      choices: ['○ 正しい', '× 誤り'],
+      answer: 1,
+      explain: '熱量が高く話が長くなる方がいても、「それでも時間を守ることが次の方への思いやり」であり、ビジネスにおいてとても大切な姿勢です。'
+    },
+    {
+      section: 'こんな場面でお知らせします',
+      type: 'multi',
+      text: 'タイムキーパーが時間をお知らせする場面として、マニュアルに挙げられているものを<b>すべて</b>選んでください。',
+      choices: [
+        'ブースPRタイム',
+        '他会場PR',
+        '新入会員の意気込み',
+        '弥栄のご発声',
+        '休憩時間',
+        '名刺交換タイム'
+      ],
+      answer: [0, 1, 2, 3],
+      explain: 'お知らせする場面は「ゲスト紹介・ブースPRタイム・他会場PR・表彰時のコメント・新入会員の意気込み・弥栄のご発声」です。休憩時間や名刺交換タイムは含まれていません。'
+    },
+    {
+      section: 'こんな場面でお知らせします',
+      type: 'tf',
+      text: '各場面の時間設定はどの例会でも同じなので、一度覚えれば毎回確認する必要はない。',
+      choices: ['○ 正しい', '× 誤り'],
+      answer: 1,
+      explain: '「時間設定は例会ごとに異なります。事前にタイムスケジュールを確認しましょう」。毎回の確認が必要です。'
+    },
+    {
+      section: '事前準備が大切です！',
+      type: 'multi',
+      text: '事前準備としてマニュアルに書かれているものを<b>すべて</b>選んでください。',
+      choices: [
+        '例会開始前に早めに会場へ来る',
+        'タイマーの機械操作を練習しておく',
+        '実際の流れをイメージしておく',
+        'タイマーは当日その場で初めて触れば十分',
+        '席が遠い場合は自席から声で時間を伝える'
+      ],
+      answer: [0, 1, 2],
+      explain: '事前準備は「早めに会場へ来る／タイムスケジュールを確認／タイマー操作を練習／マイクの近くに立つ位置を確保／実際の流れをイメージ」の5つです。'
+    },
+    {
+      section: '事前準備が大切です！',
+      type: 'single',
+      text: '自分の席がマイクから遠い場合、どうするのが正しいですか？',
+      choices: [
+        'マイクの近くにポジション（立ち位置）を確保する',
+        '自分の席から大きな声で時間を伝える',
+        '近くの人にベルを鳴らしてもらう',
+        '席が遠い場合はベルを鳴らさなくてよい'
+      ],
+      answer: 0,
+      explain: '「席が遠くても、マイクの近くにポジションを！」。事前にマイクの近くに立つ位置を確保しておきます。'
+    },
+    {
+      section: 'この係で大切なこと',
+      type: 'single',
+      text: '発表者がまだ話している途中で、設定時間になりました。どうしますか？',
+      choices: [
+        '迷わずベルを鳴らす',
+        '話が一区切りつくまで待ってからベルを鳴らす',
+        '代表の合図があるまで待つ',
+        '発表者の熱量に合わせて少し時間を伸ばす'
+      ],
+      answer: 0,
+      explain: '「正確に、冷静に時間を判断する」「迷わずベルを鳴らす」が大切なポイントです。勝手に時間を伸ばさないよう注意しましょう。'
+    },
+    {
+      section: 'この係で大切なこと',
+      type: 'multi',
+      text: '「この係で大切なこと」として正しいものを<b>すべて</b>選んでください。',
+      choices: [
+        '常にマイクの近くで、はっきりと伝える',
+        '会全体の流れを意識し、先を見て動く',
+        '困ったときは、すぐ代表に確認する',
+        'その場の雰囲気に合わせて柔軟に時間を変える',
+        '発表者の邪魔にならないよう、ベルは控えめに鳴らす'
+      ],
+      answer: [0, 1, 2],
+      explain: '大切なことは「正確に冷静に時間を判断／迷わずベルを鳴らす／常にマイクの近くではっきり伝える／会全体の流れを意識し先を見て動く／困ったときはすぐ代表に確認」です。'
+    },
+    {
+      section: '注意点・お願い',
+      type: 'tf',
+      text: 'タイマー操作中でも手が空いていれば、受付の手伝いなど他の作業を並行して行ってよい。',
+      choices: ['○ 正しい', '× 誤り'],
+      answer: 1,
+      explain: '注意点は「操作中は他の作業をしない／勝手に時間を伸ばさない／わからないことは事前に確認しておく」。操作に集中しましょう。'
+    }
+  ];
+
+  /* ─── 状態 ──────────────────────────── */
+  let order = [];        // 出題順（QUESTIONS のインデックス）
+  let current = 0;
+  let selected = new Set();
+  let answered = false;
+  let results = [];      // { qIndex, correct, chosenLabels, correctLabels }
+  let shuffled = [];     // 各問題の選択肢シャッフル結果（表示順 → 元インデックス）
+  let startedAt = null;
+
+  const $ = id => document.getElementById(id);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    $('q-total').textContent = QUESTIONS.length;
+    $('pass-line').textContent = Math.round(PASS_RATE * 100);
+    const savedName = localStorage.getItem('tk_test_name');
+    if (savedName) $('name').value = savedName;
+    renderHistory();
+  });
+
+  /* ─── 画面切替 ───────────────────────── */
+  function show(id) {
+    ['screen-start', 'screen-quiz', 'screen-result'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function goStart() { renderHistory(); show('screen-start'); }
+  function abortTest() {
+    if (confirm('テストを中断してトップに戻りますか？（回答は保存されません）')) goStart();
+  }
+
+  /* ─── テスト開始 ─────────────────────── */
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function startTest() {
+    const name = $('name').value.trim();
+    if (name) localStorage.setItem('tk_test_name', name);
+
+    order = QUESTIONS.map((_, i) => i);
+    shuffled = QUESTIONS.map(q =>
+      q.type === 'tf' ? q.choices.map((_, i) => i) : shuffle(q.choices.map((_, i) => i))
+    );
+    current = 0;
+    results = [];
+    startedAt = new Date();
+    show('screen-quiz');
+    renderQuestion();
+  }
+
+  /* ─── 問題描画 ───────────────────────── */
+  function renderQuestion() {
+    const qi = order[current];
+    const q = QUESTIONS[qi];
+    selected = new Set();
+    answered = false;
+
+    $('prog-label').textContent = `問 ${current + 1} / ${QUESTIONS.length}`;
+    $('prog-score').textContent = `正解 ${results.filter(r => r.correct).length}`;
+    $('prog-bar').style.width = `${(current / QUESTIONS.length) * 100}%`;
+
+    $('q-type').textContent = { single: '単一選択', multi: '複数選択（すべて選ぶ）', tf: '○×問題' }[q.type];
+    $('q-section').textContent = '▶ ' + q.section;
+    $('q-text').innerHTML = q.text;
+
+    const box = $('choices');
+    box.innerHTML = '';
+    shuffled[qi].forEach((origIdx, pos) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'choice' + (q.type === 'multi' ? ' multi' : '');
+      btn.dataset.orig = origIdx;
+      btn.innerHTML = `<span class="mark">${q.type === 'multi' ? '✓' : String.fromCharCode(65 + pos)}</span><span>${q.choices[origIdx]}</span>`;
+      btn.onclick = () => toggleChoice(q, origIdx, btn);
+      box.appendChild(btn);
+    });
+
+    $('feedback').className = 'feedback';
+    $('btn-answer').classList.remove('hidden');
+    $('btn-answer').disabled = true;
+    $('btn-next').classList.add('hidden');
+  }
+
+  function toggleChoice(q, origIdx, btn) {
+    if (answered) return;
+    if (q.type === 'multi') {
+      if (selected.has(origIdx)) { selected.delete(origIdx); btn.classList.remove('selected'); }
+      else { selected.add(origIdx); btn.classList.add('selected'); }
+    } else {
+      selected = new Set([origIdx]);
+      document.querySelectorAll('#choices .choice').forEach(b => b.classList.toggle('selected', +b.dataset.orig === origIdx));
+    }
+    $('btn-answer').disabled = selected.size === 0;
+  }
+
+  /* ─── 回答判定 ───────────────────────── */
+  function submitAnswer() {
+    if (answered || selected.size === 0) return;
+    answered = true;
+    const qi = order[current];
+    const q = QUESTIONS[qi];
+    const correctSet = new Set(Array.isArray(q.answer) ? q.answer : [q.answer]);
+    const isCorrect = selected.size === correctSet.size && [...selected].every(i => correctSet.has(i));
+
+    document.querySelectorAll('#choices .choice').forEach(b => {
+      const i = +b.dataset.orig;
+      b.disabled = true;
+      b.classList.remove('selected');
+      if (correctSet.has(i) && selected.has(i)) b.classList.add('correct');
+      else if (selected.has(i)) b.classList.add('wrong');
+      else if (correctSet.has(i)) b.classList.add('missed');
+    });
+
+    results.push({
+      qIndex: qi,
+      correct: isCorrect,
+      chosenLabels: [...selected].map(i => q.choices[i]),
+      correctLabels: [...correctSet].map(i => q.choices[i])
+    });
+
+    const fb = $('feedback');
+    fb.className = 'feedback show ' + (isCorrect ? 'ok' : 'ng');
+    $('fb-verdict').textContent = isCorrect ? '正解！' : '不正解…';
+    $('fb-text').textContent = q.explain;
+    $('fb-ref').textContent = '📖 マニュアル「' + q.section + '」';
+
+    $('prog-score').textContent = `正解 ${results.filter(r => r.correct).length}`;
+    $('btn-answer').classList.add('hidden');
+    const next = $('btn-next');
+    next.textContent = current + 1 < QUESTIONS.length ? '次の問題へ' : '結果を見る';
+    next.classList.remove('hidden');
+    next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function nextQuestion() {
+    current++;
+    if (current < QUESTIONS.length) renderQuestion();
+    else finishTest();
+  }
+
+  /* ─── 結果 ──────────────────────────── */
+  let lastSummary = null;
+
+  function finishTest() {
+    const total = QUESTIONS.length;
+    const score = results.filter(r => r.correct).length;
+    const rate = Math.round((score / total) * 100);
+    const passed = score / total >= PASS_RATE;
+    const name = $('name').value.trim() || '（無記名）';
+    const finishedAt = new Date();
+    const secs = Math.round((finishedAt - startedAt) / 1000);
+
+    lastSummary = { name, score, total, rate, passed, date: finishedAt.toISOString(), secs };
+
+    $('res-name').textContent = name + ' さんの結果';
+    $('res-score').textContent = score;
+    $('res-total').textContent = total;
+    $('res-rate').textContent = rate;
+    $('res-badge').innerHTML = passed ? '<span class="pass">合格</span>' : '<span class="fail">不合格</span>';
+    $('res-msg').textContent = passed
+      ? 'マニュアルの内容をしっかり理解できています。本番も正確さと冷静さで例会を支えましょう！'
+      : `合格ラインは ${Math.round(PASS_RATE * 100)}% です。振り返りで間違えた箇所を確認して、もう一度チャレンジしましょう。`;
+
+    // セクション別
+    const secMap = new Map();
+    results.forEach(r => {
+      const s = QUESTIONS[r.qIndex].section;
+      const m = secMap.get(s) || { ok: 0, n: 0 };
+      m.n++; if (r.correct) m.ok++;
+      secMap.set(s, m);
+    });
+    $('res-sections').innerHTML = [...secMap.entries()].map(([s, m]) => `
+      <div class="sec-row">
+        <span class="name">${s}</span>
+        <span class="mini"><div style="width:${(m.ok / m.n) * 100}%"></div></span>
+        <span class="cnt">${m.ok}/${m.n}</span>
+      </div>`).join('');
+
+    // 振り返り
+    $('res-review').innerHTML = results.map((r, i) => {
+      const q = QUESTIONS[r.qIndex];
+      return `
+        <div class="rv ${r.correct ? 'ok' : 'ng'}">
+          <div class="q">${r.correct ? '✅' : '❌'} 問${i + 1}. ${q.text}</div>
+          ${r.correct ? '' : `<div class="a">あなたの回答：${r.chosenLabels.join(' ／ ')}</div>`}
+          <div class="a">正解：<b>${r.correctLabels.join(' ／ ')}</b></div>
+          <div class="a">${q.explain}</div>
+        </div>`;
+    }).join('');
+
+    saveHistory(lastSummary);
+    postResult(lastSummary);
+    show('screen-result');
+  }
+
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function copyResult() {
+    if (!lastSummary) return;
+    const s = lastSummary;
+    const wrong = results.filter(r => !r.correct).map((r, i) => '・' + QUESTIONS[r.qIndex].section);
+    const text = [
+      '【タイムキーパー係 効果測定テスト 結果】',
+      `氏名：${s.name}`,
+      `日時：${fmtDate(s.date)}`,
+      `得点：${s.score} / ${s.total}（正答率 ${s.rate}%）`,
+      `判定：${s.passed ? '合格' : '不合格'}`,
+      wrong.length ? '要復習：' + [...new Set(wrong)].join('、').replace(/・/g, '') : '要復習：なし'
+    ].join('\n');
+
+    const done = () => toast('結果をコピーしました');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else fallbackCopy(text, done);
+  }
+
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { alert(text); }
+    document.body.removeChild(ta);
+  }
+
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  /* ─── 履歴（localStorage） ───────────── */
+  function loadHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveHistory(s) {
+    const h = loadHistory();
+    h.unshift(s);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, HISTORY_MAX)));
+  }
+  function clearHistory() {
+    if (!confirm('この端末の受験履歴を削除しますか？')) return;
+    localStorage.removeItem(HISTORY_KEY);
+    renderHistory();
+  }
+  function renderHistory() {
+    const h = loadHistory();
+    const body = $('history-body');
+    if (!h.length) { body.innerHTML = '<p class="muted">まだ受験履歴はありません。</p>'; return; }
+    body.innerHTML = `
+      <table>
+        <thead><tr><th>日時</th><th>氏名</th><th class="r">得点</th><th class="r">判定</th></tr></thead>
+        <tbody>${h.map(s => `
+          <tr>
+            <td>${fmtDate(s.date)}</td>
+            <td>${escapeHtml(s.name)}</td>
+            <td class="r">${s.score}/${s.total}</td>
+            <td class="r" style="color:${s.passed ? 'var(--ok)' : 'var(--ng)'};font-weight:700">${s.passed ? '合格' : '不合格'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <button class="btn ghost" onclick="clearHistory()">履歴を削除</button>`;
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  /* ─── 結果送信（任意） ───────────────── */
+  function postResult(s) {
+    if (!RESULT_POST_URL) return;
+    try {
+      fetch(RESULT_POST_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          ...s,
+          answers: results.map(r => ({ q: QUESTIONS[r.qIndex].text, correct: r.correct, chosen: r.chosenLabels }))
+        })
+      }).catch(() => {});
+    } catch (e) { /* 送信失敗は無視 */ }
+  }
+</script>
+</body>
+</html>
