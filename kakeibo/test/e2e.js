@@ -266,7 +266,29 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('誤った暗証番号を拒否', (await text(page, '#lock-err')).includes('違います'));
     await page.fill('#lock-pin', '1234'); await page.press('#lock-pin', 'Enter'); await wait(100);
     check('暗証番号で解除', !(await page.isVisible('#lock')));
+    // ── 暗号化 ──
     await page.click('[data-view=settings]');
+    await page.click('text=データを暗号化する');
+    await page.fill('#m-p-cur', '1234'); await page.fill('#m-p-confirm', '暗号化');
+    await page.click('#modal-box button:has-text("暗号化する")'); await wait(1500);
+    const rawEnc = await page.evaluate(() => localStorage.getItem('kakeibo.v1'));
+    check('保存データが暗号化される', rawEnc.includes('"enc":1') && !rawEnc.includes('"entries"') && !rawEnc.includes('テスト'), rawEnc.slice(0, 60));
+    await page.reload(); await page.waitForSelector('#lock.open');
+    await page.fill('#lock-pin', '9999'); await page.click('#lock button'); await wait(800);
+    check('誤った暗証番号では復号されない', (await text(page, '#lock-err')).includes('違います'));
+    await page.fill('#lock-pin', '1234'); await page.press('#lock-pin', 'Enter');
+    try { await page.waitForFunction(() => !document.getElementById('lock').classList.contains('open'), null, { timeout: 10000 }); }
+    catch (e) { check('復号の完了', false, 'lock-err=' + await text(page, '#lock-err') + ' errors=' + page.errors.join('/')); }
+    await wait(300);
+    check('復号後にデータが読める', (await text(page, '#day-entries')).includes('トイレットペーパー'));
+    await page.fill('#in-amount', '55'); await page.click('button:has-text("保存する")'); await wait(800);
+    const rawEnc2 = await page.evaluate(() => localStorage.getItem('kakeibo.v1'));
+    check('暗号化中の保存も暗号化される', rawEnc2.includes('"enc":1') && !rawEnc2.includes('"entries"'));
+    await page.click('[data-view=settings]');
+    await page.click('text=暗号化をやめる');
+    await page.fill('#m-p-cur', '1234'); await page.click('#modal-box button:has-text("暗号化をやめる")'); await wait(300);
+    const rawPlain = await page.evaluate(() => localStorage.getItem('kakeibo.v1'));
+    check('暗号化の解除で平文に戻る', rawPlain.includes('"entries"') && JSON.parse(rawPlain).entries.some(e => e.amount === 55));
     await page.click('text=ロックを解除する');
     await page.fill('#m-p-cur', '1234'); await page.click('#modal-box button:has-text("ロックを解除する")'); await wait(100);
 

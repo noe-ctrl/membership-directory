@@ -665,10 +665,36 @@ const ui = {
 let importState = null;
 
 /* ─── 永続化 ───────────────────────────── */
+function readRaw() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { return null; } }
+function isEnvelope(v) { return !!(v && v.enc === 1 && v.salt && v.iv && v.data); }
 function loadDb() {
-  let data = null;
-  try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { data = null; }
-  return normalizeDb(data);
+  const data = readRaw();
+  return normalizeDb(isEnvelope(data) ? null : data);
+}
+/* ─── 暗号化（暗証番号から鍵を作り AES-GCM で保存） ─── */
+let encKey = null, encSalt = '', writeChain = Promise.resolve();
+const b64 = { enc: u8 => btoa(String.fromCharCode(...u8)), dec: s => Uint8Array.from(atob(s), c => c.charCodeAt(0)) };
+function cryptoOk() { return !!(window.crypto && crypto.subtle && crypto.getRandomValues); }
+async function deriveKey(pin, saltB64) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(pin)), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64.dec(saltB64), iterations: 310000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptJson(text, key, saltB64) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
+  return { enc: 1, v: 1, salt: saltB64, iv: b64.enc(iv), data: b64.enc(new Uint8Array(buf)) };
+}
+async function decryptJson(env, key) {
+  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.dec(env.iv) }, key, b64.dec(env.data));
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+function writeEncrypted(text) {
+  const key = encKey, salt = encSalt;
+  writeChain = writeChain.then(async () => {
+    const env = await encryptJson(text, key, salt);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(env));
+  }).catch(err => { console.error(err); toast('暗号化した保存に失敗しました'); });
+  return writeChain;
 }
 function normalizeDb(data) {
   const d = (data && typeof data === 'object') ? data : {};
@@ -693,6 +719,7 @@ function normalizeDb(data) {
       ocrMode: (d.settings && d.settings.ocrMode === 'ai') ? 'ai' : 'browser',
       ocrUrl: String(d.settings && d.settings.ocrUrl || ''),
       ocrKey: String(d.settings && d.settings.ocrKey || ''),
+      encrypt: !!(d.settings && d.settings.encrypt),
       lastBackupAt: num0(d.settings && d.settings.lastBackupAt),
       startDay: Math.min(28, Math.max(1, Math.round(num0(d.settings && d.settings.startDay)) || 1)),
       sync: {
@@ -763,7 +790,9 @@ function sanitizeRule(r) {
 function safeId(v) { const s = String(v == null ? '' : v).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64); return s || uid(); }
 function saveDb(noSync) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    const text = JSON.stringify(db);
+    if (db.settings.encrypt && encKey) writeEncrypted(text);
+    else { db.settings.encrypt = false; localStorage.setItem(STORAGE_KEY, text); }
     if (!noSync && typeof scheduleSync === 'function') scheduleSync();
   } catch (e) {
     alert('保存に失敗しました。ブラウザの保存容量が上限に達している可能性があります。JSONバックアップを保存してから古いデータを整理してください。');
@@ -1416,9 +1445,10 @@ function renderSettings() {
   document.getElementById('set-ocr-key').value = db.settings.ocrKey;
   document.getElementById('set-ocr-url').value = db.settings.ocrUrl;
 
-  document.getElementById('pin-status').textContent = db.settings.pin ? '暗証番号ロック: 有効' : '暗証番号ロック: 未設定';
+  document.getElementById('pin-status').textContent = db.settings.pin ? ('暗証番号ロック: 有効' + (db.settings.encrypt ? '（データを暗号化して保存中）' : '')) : '暗証番号ロック: 未設定';
   document.getElementById('pin-btns').innerHTML = db.settings.pin
     ? '<button class="btn secondary sm" onclick="openPinModal(\'change\')">暗証番号を変更</button><button class="btn danger sm" onclick="openPinModal(\'remove\')">ロックを解除する</button>'
+      + (cryptoOk() ? (db.settings.encrypt ? '<button class="btn secondary sm" onclick="openPinModal(\'decrypt\')">暗号化をやめる</button>' : '<button class="btn secondary sm" onclick="openPinModal(\'encrypt\')">データを暗号化する</button>') : '')
     : '<button class="btn secondary sm" onclick="openPinModal(\'set\')">暗証番号を設定</button>';
 
   const dates = db.entries.map(e => e.date).sort();
@@ -1898,7 +1928,7 @@ function onRestoreFile(input) {
     const mode = db.entries.length
       ? (confirm('バックアップには' + n + '件の明細があります。\n\n「OK」= 現在のデータを置き換える\n「キャンセル」= 現在のデータに追加（重複はスキップ）') ? 'replace' : 'merge')
       : 'replace';
-    if (mode === 'replace') { db = normalizeDb(data); }
+    if (mode === 'replace') { const keepPin = db.settings.pin, keepEnc = db.settings.encrypt; db = normalizeDb(data); db.settings.pin = keepPin; db.settings.encrypt = keepEnc && !!encKey; }
     else {
       const inc = normalizeDb(data);
       const existing = new Set(db.entries.map(dupKey));
@@ -1919,6 +1949,7 @@ function wipeAll() {
   if (!confirm('本当に削除しますか？（バックアップは保存済みですか？）')) return;
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(SNAP_KEY);
+  encKey = null; encSalt = '';
   db = normalizeDb(null);
   ui.entryCat = null;
   render(); toast('すべてのデータを削除しました');
@@ -2028,30 +2059,55 @@ async function hashPin(pin, salt) {
   return 'x' + h.toString(16);
 }
 function openPinModal(mode) {
-  openModal(mode === 'set' ? '暗証番号を設定' : mode === 'change' ? '暗証番号を変更' : 'ロックを解除する',
+  const titles = { set: '暗証番号を設定', change: '暗証番号を変更', remove: 'ロックを解除する', encrypt: 'データを暗号化する', decrypt: '暗号化をやめる' };
+  const labels = { remove: 'ロックを解除する', encrypt: '暗号化する', decrypt: '暗号化をやめる' };
+  const hasNew = mode === 'set' || mode === 'change';
+  openModal(titles[mode],
     (mode !== 'set' ? '<div class="field"><label>現在の暗証番号</label><input id="m-p-cur" class="input" type="password" inputmode="numeric" maxlength="8"></div>' : '')
-    + (mode !== 'remove' ? '<div class="field"><label>新しい暗証番号（4〜8桁の数字）</label><input id="m-p-new" class="input" type="password" inputmode="numeric" maxlength="8"></div>'
+    + (hasNew ? '<div class="field"><label>新しい暗証番号（4〜8桁の数字）</label><input id="m-p-new" class="input" type="password" inputmode="numeric" maxlength="8"></div>'
       + '<div class="field"><label>もう一度入力</label><input id="m-p-new2" class="input" type="password" inputmode="numeric" maxlength="8"></div>' : '')
-    + '<div class="hint">暗証番号を忘れると開けなくなります。JSONバックアップは暗証番号なしで復元できるため、定期的に保存しておいてください。</div>'
-    + '<button class="btn" onclick="savePin(\'' + mode + '\')">' + (mode === 'remove' ? 'ロックを解除する' : '保存する') + '</button>');
+    + (mode === 'encrypt'
+      ? '<div class="note" style="margin-bottom:10px"><b>重要:</b> 暗号化すると、この端末に保存されたデータは暗証番号なしでは<b>二度と読み出せません</b>。暗証番号を忘れた場合、復元する手段は JSON バックアップかスプレッドシート同期だけです。8桁の暗証番号をおすすめします（4桁は総当たりで解けます）。<br>JSONバックアップとスプレッドシートは暗号化されません。</div>'
+        + '<div class="field"><label>確認のため「暗号化」と入力</label><input id="m-p-confirm" class="input" autocomplete="off"></div>'
+      : '<div class="hint">暗証番号を忘れると開けなくなります。JSONバックアップは暗証番号なしで復元できるため、定期的に保存しておいてください。</div>')
+    + '<button class="btn" onclick="savePin(\'' + mode + '\')">' + (labels[mode] || '保存する') + '</button>');
   const first = document.getElementById(mode !== 'set' ? 'm-p-cur' : 'm-p-new'); if (first) first.focus();
 }
 async function savePin(mode) {
+  let cur = '';
   if (mode !== 'set') {
-    const cur = document.getElementById('m-p-cur').value;
+    cur = document.getElementById('m-p-cur').value;
     if (await hashPin(cur, db.settings.pin.salt) !== db.settings.pin.hash) { toast('現在の暗証番号が違います'); return; }
   }
-  if (mode === 'remove') { db.settings.pin = null; saveDb(); closeModal(); renderSettings(); toast('ロックを解除しました'); return; }
+  if (mode === 'remove') {
+    if (db.settings.encrypt && !confirm('データの暗号化も解除され、暗証番号なしで読める形で保存されます。よろしいですか？')) return;
+    db.settings.pin = null; db.settings.encrypt = false; encKey = null;
+    saveDb(); closeModal(); renderSettings(); toast('ロックを解除しました'); return;
+  }
+  if (mode === 'encrypt') {
+    if (document.getElementById('m-p-confirm').value.trim() !== '暗号化') { toast('確認欄に「暗号化」と入力してください'); return; }
+    encSalt = b64.enc(crypto.getRandomValues(new Uint8Array(16)));
+    encKey = await deriveKey(cur, encSalt);
+    db.settings.encrypt = true;
+    await (saveDb(), writeChain);
+    closeModal(); renderSettings(); toast('データを暗号化しました'); return;
+  }
+  if (mode === 'decrypt') {
+    db.settings.encrypt = false; encKey = null;
+    saveDb(); closeModal(); renderSettings(); toast('暗号化をやめました'); return;
+  }
   const a = document.getElementById('m-p-new').value, b = document.getElementById('m-p-new2').value;
   if (!/^\d{4,8}$/.test(a)) { toast('4〜8桁の数字で入力してください'); return; }
   if (a !== b) { toast('暗証番号が一致しません'); return; }
   const salt = uid();
   db.settings.pin = { salt, hash: await hashPin(a, salt) };
+  if (db.settings.encrypt) { encSalt = b64.enc(crypto.getRandomValues(new Uint8Array(16))); encKey = await deriveKey(a, encSalt); }
   saveDb(); closeModal(); renderSettings(); toast('暗証番号を設定しました');
 }
 let hiddenAt = null;
+let pendingEnvelope = null;
 function initLock() {
-  if (db.settings.pin) showLock();
+  if (db.settings.pin || pendingEnvelope) showLock();
   document.addEventListener('visibilitychange', () => {
     if (!db.settings.pin) return;
     if (document.hidden) hiddenAt = Date.now();
@@ -2066,6 +2122,22 @@ function showLock() {
 }
 async function unlock() {
   const pin = document.getElementById('lock-pin').value;
+  if (pendingEnvelope) {
+    const env = pendingEnvelope;
+    document.getElementById('lock-err').textContent = '復号しています…';
+    try {
+      const key = await deriveKey(pin, env.salt);
+      const obj = await decryptJson(env, key);
+      encKey = key; encSalt = env.salt; pendingEnvelope = null;
+      db = normalizeDb(obj); db.settings.encrypt = true;
+      document.getElementById('lock').classList.remove('open'); hiddenAt = null;
+      bootAfterLoad();
+    } catch (e) {
+      document.getElementById('lock-err').textContent = '暗証番号が違います';
+      document.getElementById('lock-pin').value = '';
+    }
+    return;
+  }
   if (!db.settings.pin || await hashPin(pin, db.settings.pin.salt) === db.settings.pin.hash) {
     document.getElementById('lock').classList.remove('open'); hiddenAt = null;
   } else {
@@ -2421,13 +2493,22 @@ async function syncNow(silent) {
 }
 
 /* ─── 起動 ───────────────────────────── */
+function bootAfterLoad() {
+  postRecurring();
+  postCardPayments();
+  showView('input');
+  initSync();
+}
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('in-date').value = todayStr();
   document.getElementById('in-amount').addEventListener('keydown', ev => { if (ev.key === 'Enter') saveEntry(); });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeModal(); });
-  postRecurring();
-  postCardPayments();
-  showView('input');
+  const raw = readRaw();
+  if (isEnvelope(raw)) {
+    pendingEnvelope = raw;
+    document.querySelector('#lock .small').textContent = 'データは暗号化されています。暗証番号を入力して開きます';
+    showView('input');
+  } else bootAfterLoad();
   initLock();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
@@ -2441,7 +2522,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }).catch(() => {});
   }
-  initSync();
 });
 </script>
 </body>
