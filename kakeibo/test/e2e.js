@@ -112,6 +112,17 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await wait(100);
     check('削除の取り消し', (await text(page, '#day-entries')).includes('トイレットペーパー'));
 
+    // ── 編集の検証エラーで明細が壊れない ──
+    await page.click('#view-input .entry:has-text("トイレットペーパー")');
+    await page.waitForSelector('#modal.open');
+    await page.selectOption('#m-e-type', 'transfer');
+    await page.selectOption('#m-e-from', '現金'); await page.selectOption('#m-e-to', '現金');
+    await page.click('#modal-box button:has-text("保存する")'); await wait(100);
+    check('不正な振替編集は拒否', await page.isVisible('#modal.open'));
+    await page.click('.modal-close');
+    const tp = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.find(e => e.item === 'トイレットペーパー'));
+    check('拒否された編集は反映されない', tp.type === 'expense' && tp.category === '日用品', JSON.stringify(tp));
+
     // ── レシート入力 ──
     await page.click('button:has-text("レシートをまとめて入力")');
     await page.waitForSelector('#rc-lines');
@@ -184,6 +195,17 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('#modal-box button:has-text("保存する")');
     await wait(100);
     check('分類の色を変更', (await page.getAttribute('#cat-list .cat-item >> nth=0 >> .cdot', 'style')).includes('#e34948'));
+    // 分類名の変更がお気に入り・予算に追随
+    await page.click('[data-view=budget]');
+    await page.fill('.brow input >> nth=2', '12000'); await page.press('.brow input >> nth=2', 'Tab'); await wait(100); // 日用品（2番目の分類）
+    await page.click('[data-view=settings]');
+    await page.click('#cat-list .cat-item >> nth=1 >> button[title="編集"]');
+    await page.waitForSelector('#m-cat-name');
+    await page.fill('#m-cat-name', '日用雑貨');
+    await page.click('#modal-box button:has-text("保存する")'); await wait(100);
+    // （この月は「この月だけの予算」が有効なので、12000 は月別予算に入る）
+    const afterRename = await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); const ov = Object.values(d.budgets.overrides)[0].categories; return { fav: d.favorites[0].category, ov: ov['日用雑貨'], old: ov['日用品'], entry: d.entries.some(e => e.category === '日用品') }; });
+    check('分類名の変更がお気に入り・予算・明細に追随', afterRename.fav === '日用雑貨' && afterRename.ov === 12000 && !afterRename.old && !afterRename.entry, JSON.stringify(afterRename));
 
     // ── 月の開始日（締め日） ──
     await page.selectOption('#set-startday', '25');
@@ -211,6 +233,28 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('引き落とし振替の自動作成', autoPay.length === 1 && autoPay[0].amount === 3000 && autoPay[0].account === '銀行口座' && autoPay[0].toAccount === 'クレジットカード', JSON.stringify(autoPay));
     await page.reload(); await page.waitForSelector('#view-input.active');
     check('引き落とし振替は二重に作られない', (await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.filter(e => e.autoPay).length)) === 1);
+    // 口座名の変更がカードの引き落とし口座に追随
+    await page.click('[data-view=settings]');
+    await page.click('#acct-list .cat-item:has-text("銀行口座") >> button[title="編集"]');
+    await page.waitForSelector('#m-a-name');
+    await page.fill('#m-a-name', 'ゆうちょ');
+    await page.click('#modal-box button:has-text("保存する")'); await wait(150);
+    const acc = await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); return { pay: d.accounts.find(a => a.card).payAccount, ghost: d.accounts.filter(a => a.name === '銀行口座').length, entries: d.entries.some(e => e.account === '銀行口座' || e.toAccount === '銀行口座') }; });
+    check('口座名の変更が引き落とし口座・明細に追随', acc.pay === 'ゆうちょ' && acc.ghost === 0 && !acc.entries, JSON.stringify(acc));
+    // 年間集計: 締め日ありでも分類別合計と年間支出が一致
+    await page.selectOption('#set-startday', '25'); await wait(100);
+    await page.click('[data-view=report]'); await page.click('#rep-year'); await wait(100);
+    const yr = await page.evaluate(() => {
+      const tiles = [...document.querySelectorAll('#report-body .tile')].map(t => t.textContent);
+      const ex = Number((tiles[1].match(/¥([\d,]+)/) || [])[1].replace(/,/g, ''));
+      const cards = [...document.querySelectorAll('#report-body .card')];
+      const catCard = cards.find(c => c.textContent.includes('分類別の支出'));
+      const sum = catCard ? [...catCard.querySelectorAll('.lrow .a')].reduce((s, el) => s + Number(el.textContent.replace(/[¥,]/g, '')), 0) : -1;
+      return { ex, sum };
+    });
+    check('年間の分類別合計が年間支出と一致（締め日あり）', yr.ex === yr.sum, JSON.stringify(yr));
+    await page.click('#rep-month');
+    await page.click('[data-view=settings]'); await page.selectOption('#set-startday', '1'); await wait(100);
 
     // ── 暗証番号ロック ──
     await page.click('[data-view=settings]');
@@ -267,6 +311,19 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await pageB.click('text=今すぐ同期'); await wait(600);
     const memoB = await pageB.evaluate(id => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.find(e => e.id === id).memo, targetId);
     check('競合は先に同期した端末を優先', memoB === 'A編集', memoB);
+    // 設定はセクション単位でマージ: A が予算、B がお気に入りを別々に変更しても両方残る
+    await page.click('[data-view=budget]');
+    await page.fill('.brow input >> nth=0', '333000'); await page.press('.brow input >> nth=0', 'Tab'); await wait(100);
+    await page.click('[data-view=settings]'); await page.click('text=今すぐ同期'); await wait(600);
+    await pageB.click('[data-view=input]');
+    await pageB.fill('#in-amount', '120'); await pageB.fill('#in-item', 'ガム');
+    await pageB.click('#fav-add-btn'); await wait(100);
+    await pageB.click('[data-view=settings]'); await pageB.click('text=今すぐ同期'); await wait(600);
+    const mergedB = await pageB.evaluate(ym => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); return { total: d.budgets.overrides[ym] ? d.budgets.overrides[ym].total : d.budgets.total, fav: d.favorites.some(f => f.item === 'ガム') }; }, thisYm);
+    await page.click('text=今すぐ同期'); await wait(600);
+    const mergedA = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).favorites.some(f => f.item === 'ガム'));
+    check('設定のセクション別マージ（Bに予算が届きお気に入りも残る）', mergedB.total === 333000 && mergedB.fav, JSON.stringify(mergedB));
+    check('設定のセクション別マージ（AにBのお気に入りが届く）', mergedA);
     await shot(page, '04-settings');
 
     // ── ダークモード ──

@@ -10,7 +10,7 @@ const path = require('path');
 const http = require('http');
 
 function createSheet(name) {
-  const sh = { name, rows: [], frozen: 0 };
+  const sh = { name, rows: [], frozen: 0, textFmt: new Set() };
   sh.getLastRow = () => sh.rows.length;
   sh.getMaxRows = () => Math.max(sh.rows.length, 1000);
   sh.setFrozenRows = n => { sh.frozen = n; };
@@ -21,7 +21,15 @@ function createSheet(name) {
       return out;
     },
     setValues(vals) {
-      vals.forEach((v, i) => { const idx = r - 1 + i; while (sh.rows.length <= idx) sh.rows.push([]); v.forEach((x, j) => { sh.rows[idx][c - 1 + j] = x; }); });
+      // 本物のシートと同様、書式が「書式なしテキスト(@)」でないセルでは日付文字列を Date に自動変換する
+      vals.forEach((v, i) => { const idx = r - 1 + i; while (sh.rows.length <= idx) sh.rows.push([]); v.forEach((x, j) => {
+        const key = idx + ':' + (c - 1 + j);
+        sh.rows[idx][c - 1 + j] = (!sh.textFmt.has(key) && typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x)) ? new Date(x + 'T00:00:00+09:00') : x;
+      }); });
+    },
+    setNumberFormat(fmt) {
+      for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) { const key = (r - 1 + i) + ':' + (c - 1 + j); if (fmt === '@') sh.textFmt.add(key); else sh.textFmt.delete(key); }
+      return this;
     },
     clearContent() {
       for (let i = 0; i < nr; i++) { const idx = r - 1 + i; if (sh.rows[idx]) for (let j = 0; j < nc; j++) sh.rows[idx][c - 1 + j] = ''; }
@@ -40,12 +48,14 @@ function createEnv(props) {
   const LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
   const ContentService = { MimeType: { JSON: 'json' }, createTextOutput: s => ({ text: s, setMimeType() { return this; } }) };
   const UrlFetchApp = { fetch() { throw new Error('UrlFetchApp はモックでは使えません'); } };
-  return { SpreadsheetApp, PropertiesService, LockService, ContentService, UrlFetchApp, spreadsheets };
+  const Session = { getScriptTimeZone: () => 'Asia/Tokyo' };
+  const Utilities = { formatDate(d, tz, fmt) { const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); return p; } };
+  return { SpreadsheetApp, PropertiesService, LockService, ContentService, UrlFetchApp, Session, Utilities, spreadsheets };
 }
 function loadGas(file, env) {
   const code = fs.readFileSync(file, 'utf8');
-  const fn = new Function('SpreadsheetApp', 'PropertiesService', 'LockService', 'ContentService', 'UrlFetchApp', code + '\n;return { doPost: typeof doPost === "function" ? doPost : null, doGet: typeof doGet === "function" ? doGet : null };');
-  return fn(env.SpreadsheetApp, env.PropertiesService, env.LockService, env.ContentService, env.UrlFetchApp);
+  const fn = new Function('SpreadsheetApp', 'PropertiesService', 'LockService', 'ContentService', 'UrlFetchApp', 'Session', 'Utilities', code + '\n;return { doPost: typeof doPost === "function" ? doPost : null, doGet: typeof doGet === "function" ? doGet : null };');
+  return fn(env.SpreadsheetApp, env.PropertiesService, env.LockService, env.ContentService, env.UrlFetchApp, env.Session, env.Utilities);
 }
 function start(port, opts) {
   opts = opts || {};

@@ -384,6 +384,7 @@
         <button id="type-inc" onclick="setEntryType('income')">収入</button>
         <button id="type-trn" onclick="setEntryType('transfer')">振替</button>
       </div>
+      <div id="backup-note"></div>
       <div id="fav-row" class="chips" style="margin-bottom:10px"></div>
       <div class="row2">
         <div class="field">
@@ -612,7 +613,6 @@ const SERIES_DARK  = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#0
 const OTHER_COLOR = '#a8a49c';
 function isDark() { return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
 function seriesColor(i) { return (isDark() ? SERIES_DARK : SERIES_LIGHT)[i]; }
-const SERIES = { get length() { return 8; } };
 function colorExp() { return seriesColor(1); }
 function colorInc() { return seriesColor(2); }
 
@@ -676,11 +676,11 @@ function normalizeDb(data) {
     },
     entries: Array.isArray(d.entries) ? d.entries.map(sanitizeEntry).filter(Boolean) : [],
     budgets: { total: num0(d.budgets && d.budgets.total), categories: {}, overrides: {} },
-    favorites: Array.isArray(d.favorites) ? d.favorites.filter(f => f && f.name).map(f => ({ id: f.id || uid(), name: String(f.name), type: f.type === 'income' ? 'income' : 'expense', category: String(f.category || ''), item: String(f.item || ''), amount: Math.abs(Math.round(num0(f.amount))), memo: String(f.memo || ''), account: String(f.account || '') })) : [],
+    favorites: Array.isArray(d.favorites) ? d.favorites.filter(f => f && f.name).map(f => ({ id: safeId(f.id), name: String(f.name), type: f.type === 'income' ? 'income' : 'expense', category: String(f.category || ''), item: String(f.item || ''), amount: Math.abs(Math.round(num0(f.amount))), memo: String(f.memo || ''), account: String(f.account || '') })) : [],
     lastImport: (d.lastImport && Array.isArray(d.lastImport.ids) && d.lastImport.ids.length) ? { at: String(d.lastImport.at || ''), ids: d.lastImport.ids.map(String) } : null,
-    recurring: Array.isArray(d.recurring) ? d.recurring.filter(r => r && (r.category || r.type === 'transfer') && r.amount > 0) : [],
+    recurring: Array.isArray(d.recurring) ? d.recurring.filter(r => r && (r.category || r.type === 'transfer') && r.amount > 0).map(r => Object.assign({}, r, { id: safeId(r.id) })) : [],
     accounts: Array.isArray(d.accounts) ? d.accounts.filter(a => a && a.name).map(a => {
-      const o = { id: a.id || uid(), name: String(a.name), initial: Math.round(num0(a.initial)) };
+      const o = { id: safeId(a.id), name: String(a.name), initial: Math.round(num0(a.initial)) };
       if (a.card) { o.card = true; o.closingDay = Math.min(31, Math.max(1, Math.round(num0(a.closingDay)) || 15)); o.payDay = Math.min(31, Math.max(1, Math.round(num0(a.payDay)) || 10)); o.payOffset = a.payOffset === 2 ? 2 : 1; o.payAccount = String(a.payAccount || ''); o.payFrom = /^\d{4}-\d{2}$/.test(String(a.payFrom || '')) ? a.payFrom : ''; }
       return o;
     }) : DEFAULT_ACCOUNTS.map(a => Object.assign({ id: uid() }, a)),
@@ -688,6 +688,7 @@ function normalizeDb(data) {
       pin: (d.settings && d.settings.pin && d.settings.pin.hash) ? { salt: String(d.settings.pin.salt || ''), hash: String(d.settings.pin.hash) } : null,
       ocrMode: (d.settings && d.settings.ocrMode === 'ai') ? 'ai' : 'browser',
       ocrUrl: String(d.settings && d.settings.ocrUrl || ''),
+      lastBackupAt: num0(d.settings && d.settings.lastBackupAt),
       startDay: Math.min(28, Math.max(1, Math.round(num0(d.settings && d.settings.startDay)) || 1)),
       sync: {
         url: String(d.settings && d.settings.sync && d.settings.sync.url || ''),
@@ -722,7 +723,7 @@ function sanitizeEntry(e) {
   if (!amount) return null;
   const type = e.type === 'income' ? 'income' : e.type === 'transfer' ? 'transfer' : 'expense';
   return {
-    id: e.id || uid(),
+    id: safeId(e.id),
     date: e.date,
     type,
     category: type === 'transfer' ? '振替' : String(e.category || 'その他'),
@@ -732,12 +733,14 @@ function sanitizeEntry(e) {
     account: String(e.account || ''),
     toAccount: type === 'transfer' ? String(e.toAccount || '') : undefined,
     store: e.store ? String(e.store) : undefined,
-    receiptId: e.receiptId || undefined,
-    ruleId: e.ruleId || undefined,
-    autoPay: e.autoPay || undefined
+    receiptId: e.receiptId ? safeId(e.receiptId) : undefined,
+    ruleId: e.ruleId ? safeId(e.ruleId) : undefined,
+    ruleMonth: /^\d{4}-\d{2}$/.test(String(e.ruleMonth || '')) ? e.ruleMonth : undefined,
+    autoPay: e.autoPay ? String(e.autoPay).replace(/[^A-Za-z0-9_:-]/g, '').slice(0, 80) : undefined
   };
 }
 function num0(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+function safeId(v) { const s = String(v == null ? '' : v).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64); return s || uid(); }
 function saveDb(noSync) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
@@ -810,6 +813,26 @@ function ensureAccount(name) {
   if (!name) return;
   if (!db.accounts.find(a => a.name === name)) db.accounts.push({ id: uid(), name, initial: 0 });
 }
+function renameEverywhere(kind, oldName, newName) {
+  // 分類名・口座名の変更/削除に伴う参照の付け替え（newName が null なら参照を外す）
+  if (kind === 'account') {
+    db.entries.forEach(e => { if (e.account === oldName) e.account = newName || ''; if (e.toAccount === oldName) e.toAccount = newName || ''; });
+    db.recurring.forEach(r => { if (r.account === oldName) r.account = newName || ''; if (r.toAccount === oldName) r.toAccount = newName || ''; });
+    db.favorites.forEach(f => { if (f.account === oldName) f.account = newName || ''; });
+    db.accounts.forEach(a => { if (a.card && a.payAccount === oldName) a.payAccount = newName || ''; });
+  } else {
+    const type = kind;
+    const to = newName || 'その他';
+    db.entries.forEach(e => { if (e.type === type && e.category === oldName) e.category = to; });
+    db.recurring.forEach(r => { if (r.type === type && r.category === oldName) r.category = to; });
+    db.favorites.forEach(f => { if (f.type === type && f.category === oldName) f.category = to; });
+    if (type === 'expense') {
+      const move = cats => { if (cats[oldName] != null) { if (newName) cats[newName] = cats[oldName]; delete cats[oldName]; } };
+      move(db.budgets.categories);
+      Object.values(db.budgets.overrides).forEach(o => move(o.categories));
+    }
+  }
+}
 function accountBalance(name) {
   const a = db.accounts.find(x => x.name === name);
   let bal = a ? a.initial : 0;
@@ -838,6 +861,7 @@ function postRecurring() {
   const today = todayStr();
   const curYm = today.slice(0, 7);
   let posted = 0;
+  const postedKeys = new Set(db.entries.filter(e => e.ruleId).map(e => e.ruleId + ':' + (e.ruleMonth || e.date.slice(0, 7))));
   db.recurring.forEach(r => {
     if (r.enabled === false) return;
     let ym = r.lastPosted ? addMonths(r.lastPosted, 1) : (r.startMonth || curYm);
@@ -847,8 +871,11 @@ function postRecurring() {
       const day = Math.min(Math.max(1, Number(r.day) || 1), daysInMonth(ym));
       const date = ym + '-' + pad2(day);
       if (date > today) break;
-      db.entries.push({ id: uid(), date, type: r.type, category: r.type === 'transfer' ? '振替' : r.category, item: r.item || '', amount: r.amount, memo: r.memo || '', account: r.account || '', toAccount: r.type === 'transfer' ? (r.toAccount || '') : undefined, ruleId: r.id });
-      r.lastPosted = ym; posted++;
+      if (!postedKeys.has(r.id + ':' + ym)) {
+        db.entries.push({ id: uid(), date, type: r.type, category: r.type === 'transfer' ? '振替' : r.category, item: r.item || '', amount: r.amount, memo: r.memo || '', account: r.account || '', toAccount: r.type === 'transfer' ? (r.toAccount || '') : undefined, ruleId: r.id, ruleMonth: ym });
+        posted++;
+      }
+      r.lastPosted = ym;
       ym = addMonths(ym, 1);
     }
   });
@@ -924,6 +951,7 @@ function renderInput() {
   const hist = cat ? itemHistory(ui.entryType, cat.name).filter(x => !items.includes(x)) : [];
   document.getElementById('item-history').innerHTML = hist.map(x => '<option value="' + esc(x) + '"></option>').join('');
   renderFavorites();
+  renderBackupNote();
   renderDayEntries();
 }
 function pickCat(name) { ui.entryCat = name; document.getElementById('in-item').value = ''; renderInput(); }
@@ -1255,7 +1283,7 @@ function yearReportHtml() {
   html += '<tr class="total"><td>合計</td><td class="num inc">' + fmtYen(tInc) + '</td><td class="num exp">' + fmtYen(tEx) + '</td><td class="num' + (tInc - tEx < 0 ? ' exp' : '') + '">' + fmtYen(tInc - tEx) + '</td></tr>';
   html += '</tbody></table></div></div>';
   // 分類別の年間集計
-  const rows = breakdown(db.entries.filter(e => e.date.slice(0, 4) === year && e.type === 'expense'));
+  const rows = breakdown(months.flatMap(x => entriesInMonth(x.ym)).filter(e => e.type === 'expense'));
   if (rows.length) {
     html += '<div class="card"><div class="card-title">' + year + '年 分類別の支出</div>';
     rows.forEach(r => {
@@ -1354,7 +1382,8 @@ function renderSettings() {
     || '<div class="small">口座が登録されていません</div>';
 
   const li = db.lastImport;
-  const liN = li ? db.entries.filter(e => li.ids.includes(e.id)).length : 0;
+  const liIds = li ? new Set(li.ids) : null;
+  const liN = li ? db.entries.filter(e => liIds.has(e.id)).length : 0;
   document.getElementById('import-undo').innerHTML = liN ? '<div class="btn-row" style="margin-top:10px"><button class="btn danger sm" onclick="undoImport()">前回の取り込み（' + liN + '件・' + esc(li.at.slice(0, 16).replace('T', ' ')) + '）を取り消す</button></div>' : '';
   document.getElementById('set-startday').innerHTML = Array.from({ length: 28 }, (_, i) => '<option value="' + (i + 1) + '"' + (startDay() === i + 1 ? ' selected' : '') + '>' + (i + 1) + '日' + (i === 0 ? '（暦どおり）' : '') + '</option>').join('');
   document.getElementById('set-sync-url').value = db.settings.sync.url;
@@ -1403,11 +1432,7 @@ function saveCategory(i) {
   if (!name) { toast('分類名を入力してください'); return; }
   if (cats.some((x, j) => j !== i && x.name === name)) { toast('同じ名前の分類があります'); return; }
   const items = [...new Set(document.getElementById('m-cat-items').value.split(/[\n,、]/).map(s => s.trim()).filter(Boolean))];
-  if (name !== c.name) {
-    db.entries.forEach(e => { if (e.type === ui.catType && e.category === c.name) e.category = name; });
-    db.recurring.forEach(r => { if (r.type === ui.catType && r.category === c.name) r.category = name; });
-    if (ui.catType === 'expense' && db.budgets.categories[c.name]) { db.budgets.categories[name] = db.budgets.categories[c.name]; delete db.budgets.categories[c.name]; }
-  }
+  if (name !== c.name) renameEverywhere(ui.catType, c.name, name);
   c.name = name; c.items = items;
   const sw = document.querySelector('#m-cat-colors .swatch.on');
   if (sw) c.color = Number(sw.dataset.k);
@@ -1418,11 +1443,10 @@ function deleteCategory(i) {
   const used = db.entries.filter(e => e.type === ui.catType && e.category === c.name).length;
   if (used) {
     if (!confirm('「' + c.name + '」は' + used + '件の明細で使われています。削除すると、これらの明細は「その他」に変更されます。よろしいですか？')) return;
-    db.entries.forEach(e => { if (e.type === ui.catType && e.category === c.name) e.category = 'その他'; });
-    ensureCategory(ui.catType, 'その他');
   } else if (!confirm('「' + c.name + '」を削除しますか？')) return;
   db.categories[ui.catType] = catsOf(ui.catType).filter(x => x !== c);
-  delete db.budgets.categories[c.name];
+  renameEverywhere(ui.catType, c.name, null);
+  if (c.name !== 'その他') ensureCategory(ui.catType, 'その他');
   saveDb(); renderSettings();
 }
 
@@ -1534,13 +1558,14 @@ function saveEdit(id) {
   const date = document.getElementById('m-e-date').value;
   if (!date) { toast('日付を入力してください'); return; }
   if (amount == null || amount === 0) { toast('金額を入力してください'); return; }
-  e.type = document.getElementById('m-e-type').value;
+  const newType = document.getElementById('m-e-type').value;
+  const from = document.getElementById('m-e-from').value, to = document.getElementById('m-e-to').value;
+  if (newType === 'transfer' && (!from || !to || from === to)) { toast('振替元と振替先を確認してください'); return; }
+  e.type = newType;
   e.date = date;
   e.amount = Math.abs(amount);
   e.memo = document.getElementById('m-e-memo').value.trim();
   if (e.type === 'transfer') {
-    const from = document.getElementById('m-e-from').value, to = document.getElementById('m-e-to').value;
-    if (!from || !to || from === to) { toast('振替元と振替先を確認してください'); return; }
     e.category = '振替'; e.item = ''; e.account = from; e.toAccount = to; delete e.store;
   } else {
     e.category = document.getElementById('m-e-cat').value || 'その他';
@@ -1829,6 +1854,15 @@ function exportCsv(scope) {
 }
 function exportJson() {
   downloadFile('kakeibo_backup_' + todayStr() + '.json', JSON.stringify(Object.assign({ exportedAt: new Date().toISOString() }, db), null, 1), 'application/json');
+  db.settings.lastBackupAt = Date.now(); saveDb(true); renderBackupNote();
+}
+function renderBackupNote() {
+  const el = document.getElementById('backup-note'); if (!el) return;
+  const DAY = 86400000;
+  const last = db.settings.lastBackupAt || 0;
+  const oldest = db.entries.length ? Math.min(...db.entries.map(e => new Date(e.date).getTime())) : Date.now();
+  const need = db.entries.length >= 20 && !syncConfigured() && (last ? Date.now() - last > 30 * DAY : Date.now() - oldest > 30 * DAY);
+  el.innerHTML = need ? '<div class="note" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span>' + (last ? '最後のバックアップから30日以上経っています。' : 'バックアップがまだ保存されていません。') + 'データはこの端末のブラウザ内にだけあります。</span><button class="btn secondary sm" onclick="exportJson()">保存</button></div>' : '';
 }
 function onRestoreFile(input) {
   const file = input.files && input.files[0]; input.value = '';
@@ -1931,10 +1965,7 @@ function saveAccount(id) {
   if (db.accounts.some(a => a.name === name && a.id !== id)) { toast('同じ名前の口座があります'); return; }
   if (id) {
     const a = db.accounts.find(x => x.id === id);
-    if (a.name !== name) {
-      db.entries.forEach(e => { if (e.account === a.name) e.account = name; if (e.toAccount === a.name) e.toAccount = name; });
-      db.recurring.forEach(r => { if (r.account === a.name) r.account = name; if (r.toAccount === a.name) r.toAccount = name; });
-    }
+    if (a.name !== name) renameEverywhere('account', a.name, name);
     a.name = name; a.initial = initial; readCardSettings(a);
   } else { const a = { id: uid(), name, initial }; readCardSettings(a); db.accounts.push(a); }
   saveDb(); closeModal(); postCardPayments(); renderSettings(); toast('口座を保存しました');
@@ -1942,8 +1973,9 @@ function saveAccount(id) {
 function deleteAccount(id) {
   const a = db.accounts.find(x => x.id === id); if (!a) return;
   const used = db.entries.filter(e => e.account === a.name || e.toAccount === a.name).length;
-  if (!confirm('「' + a.name + '」を削除しますか？' + (used ? '\n（' + used + '件の明細に記録された口座名はそのまま残ります）' : ''))) return;
+  if (!confirm('「' + a.name + '」を削除しますか？' + (used ? '\n（' + used + '件の明細の口座は「指定なし」になります）' : ''))) return;
   db.accounts = db.accounts.filter(x => x.id !== id);
+  renameEverywhere('account', a.name, null);
   saveDb(); renderSettings();
 }
 function moveAccount(i, dir) {
@@ -2263,10 +2295,17 @@ function parseReceiptText(text) {
 
 /* ─── スプレッドシート同期 ───────────── */
 const SNAP_KEY = 'kakeibo.syncsnap.v1';
-let syncing = false, syncTimer = null;
-function entryHash(e) { return JSON.stringify([e.date, e.type, e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '', e.receiptId || '', e.ruleId || '', e.autoPay || '']); }
-function metaObj() { return { categories: db.categories, accounts: db.accounts, budgets: db.budgets, recurring: db.recurring, favorites: db.favorites, startDay: db.settings.startDay }; }
-function loadSnap() { try { const s = JSON.parse(localStorage.getItem(SNAP_KEY) || 'null'); if (s && s.entries) return s; } catch (e) {} return { entries: {}, metaHash: '' }; }
+let syncing = false, syncTimer = null, syncPending = false;
+function entryHash(e) { return JSON.stringify([e.date, e.type, e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '', e.receiptId || '', e.ruleId || '', e.ruleMonth || '', e.autoPay || '']); }
+const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay'];
+function metaSection(k) { return k === 'startDay' ? db.settings.startDay : db[k]; }
+function metaHashes() { const h = {}; META_SECTIONS.forEach(k => { h[k] = JSON.stringify(metaSection(k)); }); return h; }
+function applyMetaSection(k, v) {
+  if (k === 'startDay') { db.settings.startDay = normalizeDb({ settings: { startDay: v } }).settings.startDay; return; }
+  const m = normalizeDb({ [k]: v, entries: [] });
+  db[k] = m[k];
+}
+function loadSnap() { try { const s = JSON.parse(localStorage.getItem(SNAP_KEY) || 'null'); if (s && s.entries) return Object.assign({ metaHashes: {} }, s); } catch (e) {} return { entries: {}, metaHashes: {} }; }
 function saveSnap(s) { try { localStorage.setItem(SNAP_KEY, JSON.stringify(s)); } catch (e) {} }
 function syncConfigured() { const c = db.settings.sync; return !!(c.url && c.key); }
 function setSyncOpt(k, v) {
@@ -2285,7 +2324,8 @@ function renderSyncStatus(msg) {
   el.textContent = (c.lastSyncAt ? '最終同期: ' + new Date(c.lastSyncAt).toLocaleString('ja-JP') : 'まだ同期していません') + (c.lastResult && c.lastResult !== 'ok' ? ' / ' + c.lastResult : '');
 }
 function scheduleSync() {
-  if (!syncConfigured() || !db.settings.sync.auto || syncing) return;
+  if (!syncConfigured() || !db.settings.sync.auto) return;
+  if (syncing) { syncPending = true; return; }
   clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(true), 4000);
 }
 function initSync() {
@@ -2298,7 +2338,7 @@ function dedupeGenerated() {
   // 複数端末で同じ定期収支・引き落としが二重に自動作成された場合に片方を消す
   const seen = new Map(); const drop = new Set();
   db.entries.slice().sort((a, b) => (a.id < b.id ? -1 : 1)).forEach(e => {
-    const k = e.ruleId ? 'r:' + e.ruleId + ':' + e.date.slice(0, 7) : e.autoPay ? 'p:' + e.autoPay : null;
+    const k = e.ruleId ? 'r:' + e.ruleId + ':' + (e.ruleMonth || e.date.slice(0, 7)) : e.autoPay ? 'p:' + e.autoPay : null;
     if (!k) return;
     if (seen.has(k)) drop.add(e.id); else seen.set(k, e.id);
   });
@@ -2316,8 +2356,10 @@ async function syncNow(silent) {
     const changed = db.entries.filter(e => snap.entries[e.id] !== entryHash(e));
     const current = new Set(db.entries.map(e => e.id));
     const deleted = Object.keys(snap.entries).filter(id => !current.has(id));
-    const metaHash = JSON.stringify(metaObj());
-    const body = { key: c.key, since: c.lastSyncAt || 0, entries: changed, deleted, meta: metaHash !== snap.metaHash ? metaObj() : null };
+    const hashes = metaHashes();
+    const meta = {}; let metaChanged = false;
+    META_SECTIONS.forEach(k => { if (hashes[k] !== snap.metaHashes[k]) { meta[k] = metaSection(k); metaChanged = true; } });
+    const body = { key: c.key, since: c.lastSyncAt || 0, entries: changed, deleted, meta: metaChanged ? meta : null };
     const res = await fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error('通信エラー (' + res.status + ')');
     const json = await res.json();
@@ -2331,18 +2373,17 @@ async function syncNow(silent) {
     });
     const delSet = new Set(json.deleted || []);
     if (delSet.size) db.entries = db.entries.filter(e => !delSet.has(e.id));
-    if (json.meta) {
-      const m = normalizeDb(Object.assign({}, json.meta, { entries: [], settings: { startDay: json.meta.startDay } }));
-      db.categories = m.categories; db.accounts = m.accounts; db.budgets = m.budgets; db.recurring = m.recurring; db.favorites = m.favorites;
-      db.settings.startDay = m.settings.startDay;
-      db.entries.forEach(e => { [e.account, e.toAccount].forEach(n => ensureAccount(n)); });
+    let metaReceived = false;
+    if (json.meta && typeof json.meta === 'object') {
+      META_SECTIONS.forEach(k => { if (k in json.meta) { applyMetaSection(k, json.meta[k]); metaReceived = true; } });
+      if (metaReceived) db.entries.forEach(e => { [e.account, e.toAccount].forEach(n => ensureAccount(n)); });
     }
     dedupeGenerated();
     c.lastSyncAt = Number(json.serverTime) || Date.now();
     c.lastResult = 'ok';
-    saveSnap({ entries: Object.fromEntries(db.entries.map(e => [e.id, entryHash(e)])), metaHash: JSON.stringify(metaObj()) });
+    saveSnap({ entries: Object.fromEntries(db.entries.map(e => [e.id, entryHash(e)])), metaHashes: metaHashes() });
     saveDb(true);
-    if (received || delSet.size || json.meta) { ui.month = ui.month || currentPeriod(); render(); }
+    if (received || delSet.size || metaReceived) { ui.month = ui.month || currentPeriod(); render(); }
     renderSyncStatus();
     if (!silent) toast('同期しました（送信 ' + changed.length + '件 / 受信 ' + received + '件）');
   } catch (err) {
@@ -2350,7 +2391,10 @@ async function syncNow(silent) {
     saveDb(true);
     renderSyncStatus();
     if (!silent) toast('同期に失敗しました: ' + (err.message || err));
-  } finally { syncing = false; }
+  } finally {
+    syncing = false;
+    if (syncPending) { syncPending = false; scheduleSync(); }
+  }
 }
 
 /* ─── 起動 ───────────────────────────── */
@@ -2362,6 +2406,7 @@ document.addEventListener('DOMContentLoaded', () => {
   postCardPayments();
   showView('input');
   initLock();
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').then(reg => {

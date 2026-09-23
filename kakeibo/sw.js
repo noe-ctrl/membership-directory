@@ -1,5 +1,5 @@
 /* オフライン用 Service Worker：ネットワーク優先、失敗時はキャッシュを返す */
-const CACHE = 'kakeibo-v2';
+const CACHE = 'kakeibo-v3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {
@@ -14,8 +14,7 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
     fetch(event.request).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(event.request, copy)).catch(() => {});
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(event.request, copy)).catch(() => {}); }
       return res;
     }).catch(() => caches.match(event.request).then(r => r || caches.match('./index.html')))
   );
