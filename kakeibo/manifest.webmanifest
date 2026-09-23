@@ -1,0 +1,14 @@
+{
+  "name": "家計簿",
+  "short_name": "家計簿",
+  "description": "うきうき家計簿から移行できる、ブラウザで動く家計簿アプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#f6f4ef",
+  "lang": "ja",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

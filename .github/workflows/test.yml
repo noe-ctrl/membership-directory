@@ -1,0 +1,20 @@
+# 家計簿アプリの自動テスト（Playwright + Chromium）を push / PR ごとに実行する
+name: Kakeibo tests
+on:
+  push:
+    branches-ignore: [main]
+    paths: ['kakeibo/**', '.github/workflows/test.yml']
+  pull_request:
+    paths: ['kakeibo/**', '.github/workflows/test.yml']
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm init -y >/dev/null && npm i --no-save playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - run: node kakeibo/test/e2e.js
