@@ -6,8 +6,8 @@
  *  2. 左メニュー「プロジェクトの設定」→「スクリプト プロパティ」に
  *       ANTHROPIC_API_KEY = （Anthropic の APIキー）
  *       OCR_KEY           = （好きな長めの文字列。家計簿アプリの「AI読み取りの合言葉」にも同じ値を入れる）
- *     を追加する。OCR_KEY を設定すると、URLを知っているだけの第三者があなたのAPIキーで
- *     読み取りを実行することを防げる
+ *     を追加する。OCR_KEY は必須で、URLを知っているだけの第三者があなたのAPIキーで
+ *     読み取りを実行することを防ぐ
  *  3. 「デプロイ」→「新しいデプロイ」→ 種類「ウェブアプリ」
  *       次のユーザーとして実行: 自分 / アクセスできるユーザー: 全員
  *     でデプロイし、発行された URL（…/exec）を家計簿アプリの
@@ -50,7 +50,8 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents || '{}');
     const props = PropertiesService.getScriptProperties();
     const ocrKey = props.getProperty('OCR_KEY');
-    if (ocrKey && String(body.key || '') !== ocrKey) throw new Error('合言葉が違います（設定の「AI読み取りの合言葉」を確認してください）');
+    if (!ocrKey) throw new Error('スクリプト プロパティ OCR_KEY が設定されていません');
+    if (!secretEquals_(String(body.key || ''), ocrKey)) throw new Error('合言葉が違います（設定の「AI読み取りの合言葉」を確認してください）');
     if (!body.image) throw new Error('画像がありません');
     const apiKey = props.getProperty('ANTHROPIC_API_KEY');
     if (!apiKey) throw new Error('スクリプト プロパティ ANTHROPIC_API_KEY が設定されていません');
@@ -104,7 +105,16 @@ function doPost(e) {
 
 // ブラウザから直接開いたときの動作確認用
 function doGet() {
-  return out({ ok: true, message: 'receipt-ai is running. POST a JSON body { image, mime, categories }.' });
+  return out({ ok: true, message: 'receipt-ai is running. POST a JSON body { key, image, mime, categories }.' });
+}
+
+// 文字列の比較を一定時間で行う（ハッシュ同士を全桁比較）
+function secretEquals_(a, b) {
+  const ha = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(a), Utilities.Charset.UTF_8);
+  const hb = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(b), Utilities.Charset.UTF_8);
+  let diff = 0;
+  for (let i = 0; i < ha.length; i++) diff |= ha[i] ^ hb[i];
+  return diff === 0;
 }
 
 function out(obj) {

@@ -776,9 +776,9 @@ const YM_RE = /^\d{4}-\d{2}$/;
 function sanitizeRule(r) {
   if (!r || typeof r !== 'object') return null;
   const type = r.type === 'income' ? 'income' : r.type === 'transfer' ? 'transfer' : 'expense';
-  const amount = Math.abs(Math.round(num0(r.amount)));
+  const amount = Math.round(num0(r.amount));
   const category = type === 'transfer' ? '振替' : String(r.category || '');
-  if (!amount || !category) return null;
+  if (!(amount > 0) || !category) return null;
   const ym = v => (YM_RE.test(String(v || '')) ? String(v) : '');
   return {
     id: safeId(r.id), type, category, item: String(r.item || ''), amount, memo: String(r.memo || ''),
@@ -1552,7 +1552,7 @@ function saveRecurring(id) {
     Object.assign(r, data);
     if (r.lastPosted && r.lastPosted < r.startMonth) r.lastPosted = null;
   } else {
-    r = Object.assign({ id: uid(), lastPosted: null }, data);
+    r = sanitizeRule(Object.assign({ id: uid(), lastPosted: null }, data));
     db.recurring.push(r);
   }
   if (r.type !== 'transfer') ensureCategory(r.type, r.category, r.item);

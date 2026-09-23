@@ -47,9 +47,22 @@ function createEnv(props) {
   const PropertiesService = { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } }) };
   const LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
   const ContentService = { MimeType: { JSON: 'json' }, createTextOutput: s => ({ text: s, setMimeType() { return this; } }) };
-  const UrlFetchApp = { fetch() { throw new Error('UrlFetchApp はモックでは使えません'); } };
+  // Anthropic API の代わりに固定のレシート読み取り結果を返す
+  const FAKE_RECEIPT = { date: '2026-09-09', store: 'モックスーパー', total: 406, items: [{ name: 'キャベツ', amount: 158, category: '食費' }, { name: '牛乳', amount: 248, category: '食費' }] };
+  const UrlFetchApp = { fetch(url, opt) {
+    const req = JSON.parse(opt.payload || '{}');
+    if (!opt.headers || !opt.headers['x-api-key']) return { getResponseCode: () => 401, getContentText: () => JSON.stringify({ error: { message: 'no key' } }) };
+    const img = req.messages && req.messages[0].content.find(c => c.type === 'image');
+    if (!img || !img.source.data) return { getResponseCode: () => 400, getContentText: () => JSON.stringify({ error: { message: 'no image' } }) };
+    return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(FAKE_RECEIPT) }], usage: {} }) };
+  } };
   const Session = { getScriptTimeZone: () => 'Asia/Tokyo' };
-  const Utilities = { formatDate(d, tz, fmt) { const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); return p; } };
+  const nodeCrypto = require('crypto');
+  const Utilities = {
+    formatDate(d, tz, fmt) { return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); },
+    DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
+    computeDigest(alg, s, cs) { return [...nodeCrypto.createHash(alg).update(String(s), cs).digest()].map(b => (b > 127 ? b - 256 : b)); }
+  };
   return { SpreadsheetApp, PropertiesService, LockService, ContentService, UrlFetchApp, Session, Utilities, spreadsheets };
 }
 function loadGas(file, env) {
@@ -59,15 +72,17 @@ function loadGas(file, env) {
 }
 function start(port, opts) {
   opts = opts || {};
-  const env = createEnv(Object.assign({ SYNC_KEY: 'testkey' }, opts.props || {}));
+  const env = createEnv(Object.assign({ SYNC_KEY: 'testkey', OCR_KEY: 'ocrkey', ANTHROPIC_API_KEY: 'sk-test' }, opts.props || {}));
   const sync = loadGas(path.join(__dirname, '..', 'gas', 'sync.gs'), env);
+  const ocr = loadGas(path.join(__dirname, '..', 'gas', 'receipt-ai.gs'), env);
   const server = http.createServer((req, res) => {
     const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
     let body = '';
     req.on('data', d => { body += d; });
     req.on('end', () => {
       try {
-        const out = req.method === 'POST' ? sync.doPost({ postData: { contents: body } }) : sync.doGet();
+        const app = req.url.startsWith('/ocr') ? ocr : sync;
+        const out = req.method === 'POST' ? app.doPost({ postData: { contents: body } }) : app.doGet();
         res.writeHead(200, cors); res.end(out.text);
       } catch (e) { res.writeHead(500, cors); res.end(JSON.stringify({ ok: false, error: String(e.message || e) })); }
     });
@@ -77,5 +92,5 @@ function start(port, opts) {
 module.exports = { start, createEnv, loadGas };
 if (require.main === module) {
   const port = Number(process.argv[2]) || 8766;
-  start(port).then(() => console.log('mock GAS listening on http://127.0.0.1:' + port + '/exec  (SYNC_KEY=testkey)'));
+  start(port).then(() => console.log('mock GAS listening on http://127.0.0.1:' + port + '/exec (SYNC_KEY=testkey) and /ocr (OCR_KEY=ocrkey)'));
 }

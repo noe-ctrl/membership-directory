@@ -353,7 +353,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await evil.evaluate(() => { window.__xss = 0; });
     const evilBackup = path.join(TMP, 'evil.json');
     fs.writeFileSync(evilBackup, JSON.stringify({
-      entries: [{ id: "x');window.__xss=1;('", date: '2026-09-01', type: 'expense', category: '<img src=x onerror="window.__xss=1">', amount: 100 }],
+      entries: [{ id: "x');window.__xss=1;('", date: today, type: 'expense', category: '<img src=x onerror="window.__xss=1">', amount: 100 }],
       recurring: [{ category: 'x', amount: 1, day: '<img src=x onerror="window.__xss=1">', startMonth: '<img src=x onerror="window.__xss=1">-01' }],
       categories: { expense: [{ name: '食費" onload="window.__xss=1" x="' }] }
     }));
@@ -369,6 +369,34 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const recTxt = await text(evil, '#rec-list');
     check('改ざんデータでスクリプトが実行されない', xss === 0 && recTxt.includes('毎月1日') && evil.errors.length === 0, 'xss=' + xss + ' ' + evil.errors.join('/'));
     await evil.context().close();
+
+    // ── AI読み取り（擬似GAS経由）と合言葉 ──
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    const pngPath = path.join(TMP, 'receipt.png'); fs.writeFileSync(pngPath, png);
+    await page.click('[data-view=settings]');
+    await page.selectOption('#set-ocr', 'ai'); await wait(100);
+    await page.fill('#set-ocr-url', 'http://127.0.0.1:' + SYNC_PORT + '/ocr'); await page.press('#set-ocr-url', 'Tab');
+    await page.fill('#set-ocr-key', 'wrongkey'); await page.press('#set-ocr-key', 'Tab');
+    await page.click('[data-view=input]');
+    await page.click('button:has-text("レシートをまとめて入力")');
+    await page.waitForSelector('#rc-lines');
+    let [fcR] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=レシートを読み取る')]);
+    await fcR.setFiles(pngPath); await wait(800);
+    check('AI読み取り: 合言葉が違うと拒否', (await text(page, '#ocr-status')).includes('合言葉'), await text(page, '#ocr-status'));
+    await page.click('.modal-close');
+    await page.click('[data-view=settings]');
+    await page.fill('#set-ocr-key', 'ocrkey'); await page.press('#set-ocr-key', 'Tab');
+    await page.click('[data-view=input]');
+    await page.click('button:has-text("レシートをまとめて入力")');
+    await page.waitForSelector('#rc-lines');
+    [fcR] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=レシートを読み取る')]);
+    await fcR.setFiles(pngPath); await wait(800);
+    const rcStore = await page.inputValue('#rc-store');
+    const rcItems = await page.$$eval('#rc-lines .rc-item', l => l.map(i => i.value));
+    const rcTotal = await page.inputValue('#rc-total');
+    check('AI読み取り: 結果が明細に反映', rcStore === 'モックスーパー' && rcItems.join(',') === 'キャベツ,牛乳' && rcTotal === '406', rcStore + '|' + rcItems + '|' + rcTotal);
+    await page.click('.modal-close');
+    await page.click('[data-view=settings]'); await page.selectOption('#set-ocr', 'browser'); await wait(100);
 
     // ── ダークモード ──
     const dark = await newPage(browser, { colorScheme: 'dark' });

@@ -37,7 +37,7 @@ function doPost(e) {
     const props = PropertiesService.getScriptProperties();
     const key = props.getProperty('SYNC_KEY');
     if (!key) throw new Error('スクリプト プロパティ SYNC_KEY が設定されていません');
-    if (String(body.key || '') !== key) throw new Error('同期キーが違います');
+    if (!secretEquals_(String(body.key || ''), key)) throw new Error('同期キーが違います');
 
     const ss = getSpreadsheet_(props);
     const sheet = getSheet_(ss, 'entries', COLS);
@@ -143,6 +143,14 @@ function writeMeta_(sh, meta) {
   const rows = META_SECTIONS.filter(function (k) { return meta[k]; }).map(function (k) { return [k, meta[k].json, meta[k].updatedAt]; });
   sh.getRange(2, 1, Math.max(1, sh.getMaxRows() - 1), 3).clearContent();
   if (rows.length) { const r = sh.getRange(2, 1, rows.length, 3); r.setNumberFormat('@'); r.setValues(rows); }
+}
+// 文字列の比較を一定時間で行う（ハッシュ同士を全桁比較）
+function secretEquals_(a, b) {
+  const ha = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(a), Utilities.Charset.UTF_8);
+  const hb = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(b), Utilities.Charset.UTF_8);
+  let diff = 0;
+  for (let i = 0; i < ha.length; i++) diff |= ha[i] ^ hb[i];
+  return diff === 0;
 }
 function out_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
