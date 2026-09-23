@@ -542,6 +542,10 @@
         <label>AI読み取り用のURL（GASウェブアプリのURL）</label>
         <input id="set-ocr-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setOcrUrl(this.value)">
       </div>
+      <div class="field" id="set-ocr-key-field" style="display:none">
+        <label>AI読み取りの合言葉（GASのスクリプト プロパティ OCR_KEY と同じ文字列）</label>
+        <input id="set-ocr-key" class="input" type="password" autocomplete="off" onchange="setOcrKey(this.value)">
+      </div>
       <div class="hint">AI読み取りは <code>kakeibo/gas/receipt-ai.gs</code> を Google Apps Script に貼り付けてデプロイし、そのURLを設定します（手順はREADME参照）。精度はAI読み取りの方が高く、品目の分類まで自動で推定します。</div>
     </div>
 
@@ -678,7 +682,7 @@ function normalizeDb(data) {
     budgets: { total: num0(d.budgets && d.budgets.total), categories: {}, overrides: {} },
     favorites: Array.isArray(d.favorites) ? d.favorites.filter(f => f && f.name).map(f => ({ id: safeId(f.id), name: String(f.name), type: f.type === 'income' ? 'income' : 'expense', category: String(f.category || ''), item: String(f.item || ''), amount: Math.abs(Math.round(num0(f.amount))), memo: String(f.memo || ''), account: String(f.account || '') })) : [],
     lastImport: (d.lastImport && Array.isArray(d.lastImport.ids) && d.lastImport.ids.length) ? { at: String(d.lastImport.at || ''), ids: d.lastImport.ids.map(String) } : null,
-    recurring: Array.isArray(d.recurring) ? d.recurring.filter(r => r && (r.category || r.type === 'transfer') && r.amount > 0).map(r => Object.assign({}, r, { id: safeId(r.id) })) : [],
+    recurring: Array.isArray(d.recurring) ? d.recurring.map(sanitizeRule).filter(Boolean) : [],
     accounts: Array.isArray(d.accounts) ? d.accounts.filter(a => a && a.name).map(a => {
       const o = { id: safeId(a.id), name: String(a.name), initial: Math.round(num0(a.initial)) };
       if (a.card) { o.card = true; o.closingDay = Math.min(31, Math.max(1, Math.round(num0(a.closingDay)) || 15)); o.payDay = Math.min(31, Math.max(1, Math.round(num0(a.payDay)) || 10)); o.payOffset = a.payOffset === 2 ? 2 : 1; o.payAccount = String(a.payAccount || ''); o.payFrom = /^\d{4}-\d{2}$/.test(String(a.payFrom || '')) ? a.payFrom : ''; }
@@ -688,6 +692,7 @@ function normalizeDb(data) {
       pin: (d.settings && d.settings.pin && d.settings.pin.hash) ? { salt: String(d.settings.pin.salt || ''), hash: String(d.settings.pin.hash) } : null,
       ocrMode: (d.settings && d.settings.ocrMode === 'ai') ? 'ai' : 'browser',
       ocrUrl: String(d.settings && d.settings.ocrUrl || ''),
+      ocrKey: String(d.settings && d.settings.ocrKey || ''),
       lastBackupAt: num0(d.settings && d.settings.lastBackupAt),
       startDay: Math.min(28, Math.max(1, Math.round(num0(d.settings && d.settings.startDay)) || 1)),
       sync: {
@@ -740,6 +745,21 @@ function sanitizeEntry(e) {
   };
 }
 function num0(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+const YM_RE = /^\d{4}-\d{2}$/;
+function sanitizeRule(r) {
+  if (!r || typeof r !== 'object') return null;
+  const type = r.type === 'income' ? 'income' : r.type === 'transfer' ? 'transfer' : 'expense';
+  const amount = Math.abs(Math.round(num0(r.amount)));
+  const category = type === 'transfer' ? '振替' : String(r.category || '');
+  if (!amount || !category) return null;
+  const ym = v => (YM_RE.test(String(v || '')) ? String(v) : '');
+  return {
+    id: safeId(r.id), type, category, item: String(r.item || ''), amount, memo: String(r.memo || ''),
+    account: String(r.account || ''), toAccount: type === 'transfer' ? String(r.toAccount || '') : '',
+    day: Math.min(31, Math.max(1, Math.round(num0(r.day)) || 1)),
+    startMonth: ym(r.startMonth), endMonth: ym(r.endMonth), enabled: r.enabled !== false, lastPosted: ym(r.lastPosted) || null
+  };
+}
 function safeId(v) { const s = String(v == null ? '' : v).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64); return s || uid(); }
 function saveDb(noSync) {
   try {
@@ -759,7 +779,7 @@ function daysInMonth(ym) { const [y, m] = ym.split('-').map(Number); return new 
 function addMonths(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
 function fmtYen(n) { return (n < 0 ? '-' : '') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP'); }
 function fmtCompact(n) { return n >= 10000 ? (Math.round(n / 1000) / 10).toLocaleString('ja-JP') + '万' : n.toLocaleString('ja-JP'); }
-function fmtMonth(ym) { const [y, m] = ym.split('-'); return y + '年' + Number(m) + '月'; }
+function fmtMonth(ym) { const [y, m] = String(ym).split('-'); return Number(y) + '年' + Number(m) + '月'; }
 function fmtDateJa(ds) { const [y, m, d] = ds.split('-').map(Number); const w = '日月火水木金土'[new Date(y, m - 1, d).getDay()]; return m + '月' + d + '日（' + w + '）'; }
 function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -1213,7 +1233,7 @@ function trendCardHtml(type) {
   }
   const W = 640, H = 200, padL = 8, padB = 24, top = 10, bw = (W - padL * 2) / 12;
   const color = sel ? catColor(type, sel) : (type === 'income' ? colorInc() : colorExp());
-  let svg = '<svg class="yearchart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + (sel || typeLabel(type)) + 'の12か月の推移">';
+  let svg = '<svg class="yearchart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(sel || typeLabel(type)) + 'の12か月の推移">';
   for (let g = 1; g <= 4; g++) { const y = top + (H - padB - top) * (1 - g / 4); svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--grid)" stroke-width="1"/>'; }
   months.forEach((x, i) => {
     const h = (H - padB - top) * x.v / max, x0 = padL + i * bw + 6, w = bw - 12;
@@ -1367,7 +1387,7 @@ function renderSettings() {
     '<div class="cat-item">'
     + '<div class="n"><div>' + (r.type === 'transfer' ? '振替 <span class="small">（' + esc(r.account) + ' → ' + esc(r.toAccount) + '）</span>' : esc(r.item || r.category) + ' <span class="small">（' + esc(r.category) + '）</span>')
     + (r.enabled === false ? ' <span class="small exp">停止中</span>' : '') + '</div>'
-    + '<div class="items">毎月' + r.day + '日 · <span class="' + (r.type === 'income' ? 'inc' : r.type === 'transfer' ? '' : 'exp') + '">' + (r.type === 'income' ? '+' : r.type === 'transfer' ? '' : '-') + fmtYen(r.amount) + '</span>'
+    + '<div class="items">毎月' + Number(r.day) + '日 · <span class="' + (r.type === 'income' ? 'inc' : r.type === 'transfer' ? '' : 'exp') + '">' + (r.type === 'income' ? '+' : r.type === 'transfer' ? '' : '-') + fmtYen(r.amount) + '</span>'
     + (r.startMonth ? ' · ' + fmtMonth(r.startMonth) + 'から' : '') + (r.endMonth ? fmtMonth(r.endMonth) + 'まで' : '') + (r.memo ? ' · ' + esc(r.memo) : '') + '</div></div>'
     + '<button class="icon-btn" title="編集" onclick="openRecurring(\'' + r.id + '\')">✎</button>'
     + '<button class="icon-btn danger" title="削除" onclick="deleteRecurring(\'' + r.id + '\')">×</button>'
@@ -1392,6 +1412,8 @@ function renderSettings() {
   renderSyncStatus();
   document.getElementById('set-ocr').value = db.settings.ocrMode;
   document.getElementById('set-ocr-url-field').style.display = db.settings.ocrMode === 'ai' ? '' : 'none';
+  document.getElementById('set-ocr-key-field').style.display = db.settings.ocrMode === 'ai' ? '' : 'none';
+  document.getElementById('set-ocr-key').value = db.settings.ocrKey;
   document.getElementById('set-ocr-url').value = db.settings.ocrUrl;
 
   document.getElementById('pin-status').textContent = db.settings.pin ? '暗証番号ロック: 有効' : '暗証番号ロック: 未設定';
@@ -1993,6 +2015,7 @@ function setStartDay(v) {
 /* ─── レシート読み取り設定 ───────────── */
 function setOcrMode(v) { db.settings.ocrMode = v === 'ai' ? 'ai' : 'browser'; saveDb(); renderSettings(); }
 function setOcrUrl(v) { db.settings.ocrUrl = v.trim(); saveDb(); toast('保存しました'); }
+function setOcrKey(v) { db.settings.ocrKey = v.trim(); saveDb(); toast('保存しました'); }
 
 /* ─── 暗証番号ロック ─────────────────── */
 async function hashPin(pin, salt) {
@@ -2227,7 +2250,7 @@ async function ocrViaAi(base64) {
   const res = await fetch(db.settings.ocrUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ image: base64, mime: 'image/jpeg', categories: catsOf('expense').map(c => c.name) })
+    body: JSON.stringify({ key: db.settings.ocrKey || '', image: base64, mime: 'image/jpeg', categories: catsOf('expense').map(c => c.name) })
   });
   if (!res.ok) throw new Error('通信エラー (' + res.status + ')');
   const json = await res.json();

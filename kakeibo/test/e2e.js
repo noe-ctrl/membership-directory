@@ -326,6 +326,28 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('設定のセクション別マージ（AにBのお気に入りが届く）', mergedA);
     await shot(page, '04-settings');
 
+    // ── 改ざんされたバックアップ・分類名からスクリプトが実行されない ──
+    const evil = await newPage(browser);
+    await evil.evaluate(() => { window.__xss = 0; });
+    const evilBackup = path.join(TMP, 'evil.json');
+    fs.writeFileSync(evilBackup, JSON.stringify({
+      entries: [{ id: "x');window.__xss=1;('", date: '2026-09-01', type: 'expense', category: '<img src=x onerror="window.__xss=1">', amount: 100 }],
+      recurring: [{ category: 'x', amount: 1, day: '<img src=x onerror="window.__xss=1">', startMonth: '<img src=x onerror="window.__xss=1">-01' }],
+      categories: { expense: [{ name: '食費" onload="window.__xss=1" x="' }] }
+    }));
+    await evil.click('[data-view=settings]');
+    const [fcE] = await Promise.all([evil.waitForEvent('filechooser'), evil.click('text=JSONバックアップを復元')]);
+    await fcE.setFiles(evilBackup);
+    await wait(300);
+    await evil.click('[data-view=report]');
+    await evil.selectOption('#report-body select', { index: 1 }); await wait(100);
+    await evil.click('[data-view=list]'); await evil.click('#view-list .entry >> nth=0'); await wait(100); await evil.click('.modal-close');
+    await evil.click('[data-view=settings]'); await wait(100);
+    const xss = await evil.evaluate(() => window.__xss);
+    const recTxt = await text(evil, '#rec-list');
+    check('改ざんデータでスクリプトが実行されない', xss === 0 && recTxt.includes('毎月1日') && evil.errors.length === 0, 'xss=' + xss + ' ' + evil.errors.join('/'));
+    await evil.context().close();
+
     // ── ダークモード ──
     const dark = await newPage(browser, { colorScheme: 'dark' });
     await dark.fill('#in-amount', '500'); await dark.click('button:has-text("保存する")');

@@ -5,7 +5,9 @@
  *  1. https://script.google.com で新しいプロジェクトを作り、このファイルの内容を貼り付ける
  *  2. 左メニュー「プロジェクトの設定」→「スクリプト プロパティ」に
  *       ANTHROPIC_API_KEY = （Anthropic の APIキー）
- *     を追加する
+ *       OCR_KEY           = （好きな長めの文字列。家計簿アプリの「AI読み取りの合言葉」にも同じ値を入れる）
+ *     を追加する。OCR_KEY を設定すると、URLを知っているだけの第三者があなたのAPIキーで
+ *     読み取りを実行することを防げる
  *  3. 「デプロイ」→「新しいデプロイ」→ 種類「ウェブアプリ」
  *       次のユーザーとして実行: 自分 / アクセスできるユーザー: 全員
  *     でデプロイし、発行された URL（…/exec）を家計簿アプリの
@@ -46,8 +48,11 @@ const RECEIPT_SCHEMA = {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
+    const props = PropertiesService.getScriptProperties();
+    const ocrKey = props.getProperty('OCR_KEY');
+    if (ocrKey && String(body.key || '') !== ocrKey) throw new Error('合言葉が違います（設定の「AI読み取りの合言葉」を確認してください）');
     if (!body.image) throw new Error('画像がありません');
-    const apiKey = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+    const apiKey = props.getProperty('ANTHROPIC_API_KEY');
     if (!apiKey) throw new Error('スクリプト プロパティ ANTHROPIC_API_KEY が設定されていません');
 
     const categories = Array.isArray(body.categories) && body.categories.length ? body.categories : ['食費', '日用品', 'その他'];
