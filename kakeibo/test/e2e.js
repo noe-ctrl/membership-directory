@@ -284,6 +284,17 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.fill('#in-amount', '55'); await page.click('button:has-text("保存する")'); await wait(800);
     const rawEnc2 = await page.evaluate(() => localStorage.getItem('kakeibo.v1'));
     check('暗号化中の保存も暗号化される', rawEnc2.includes('"enc":1') && !rawEnc2.includes('"entries"'));
+    // 大きなデータ（約300KB）でも暗号化保存できる
+    await page.evaluate(() => { for (let i = 0; i < 2000; i++) db.entries.push({ id: uid(), date: todayStr(), type: 'expense', category: '食費', item: '大量データ' + i, amount: 100 + i, memo: 'x'.repeat(60), account: '' }); saveDb(true); });
+    await wait(1500);
+    const bigOk = await page.evaluate(() => { const r = localStorage.getItem('kakeibo.v1'); return r.includes('"enc":1') && r.length > 200000; });
+    check('大きなデータでも暗号化保存できる', bigOk);
+    await page.evaluate(() => { db.entries = db.entries.filter(e => !String(e.item).startsWith('大量データ')); saveDb(true); });
+    await wait(800);
+    // 同期スナップショットも平文では残らない
+    await page.click('[data-view=settings]'); await page.click('text=今すぐ同期'); await wait(800);
+    const snapRaw = await page.evaluate(() => localStorage.getItem('kakeibo.syncsnap.v1') || '');
+    check('暗号化中は同期スナップショットも暗号化', snapRaw === '' || (snapRaw.includes('"enc":1') && !snapRaw.includes('トイレットペーパー')), snapRaw.slice(0, 40));
     await page.click('[data-view=settings]');
     await page.click('text=暗号化をやめる');
     await page.fill('#m-p-cur', '1234'); await page.click('#modal-box button:has-text("暗号化をやめる")'); await wait(300);

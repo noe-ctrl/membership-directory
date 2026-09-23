@@ -2,6 +2,7 @@
 name: Kakeibo tests
 on:
   push:
+    branches-ignore: [main]
     paths: ['kakeibo/**', '.github/workflows/test.yml']
   pull_request:
     paths: ['kakeibo/**', '.github/workflows/test.yml']

@@ -103,7 +103,7 @@ node kakeibo/test/e2e.js          # SHOTS=1 を付けるとスクリーンショ
 ```
 
 静的サーバーと擬似GAS（`kakeibo/test/mock-gas.js`。`gas/sync.gs` をメモリ上のスプレッドシートで動かします）を自動で起動し、
-入力・レシート・取り込み・同期（2端末）・AI読み取り（擬似GAS経由）・ロック・暗号化・改ざんデータの無害化など50項目を確認します。擬似GASはGoogleスプレッドシートの日付自動変換も再現しています。
+入力・レシート・取り込み・同期（2端末）・AI読み取り（擬似GAS経由）・ロック・暗号化・改ざんデータの無害化など52項目を確認します。擬似GASはGoogleスプレッドシートの日付自動変換も再現しています。
 
 ### バックアップについて
 
@@ -112,6 +112,6 @@ node kakeibo/test/e2e.js          # SHOTS=1 を付けるとスクリーンショ
 
 ### 公開方法
 
-`.github/workflows/pages.yml` により、`main` ブランチに push すると GitHub Pages に自動で公開されます（初回はリポジトリの Settings → Pages で「Source: GitHub Actions」を選んでください）。
+`.github/workflows/pages.yml` により、`main` ブランチに push すると、テストが通った場合だけ GitHub Pages に自動で公開されます（初回はリポジトリの Settings → Pages で「Source: GitHub Actions」を選んでください）。
 公開後は `https://<user>.github.io/<repo>/kakeibo/` でアクセスできます。`kakeibo/` 配下の変更は `.github/workflows/test.yml` で自動テストされます。
 `kakeibo/index.html` をローカルで直接開いても動作します（Service Worker はHTTP(S)配信時のみ有効）。

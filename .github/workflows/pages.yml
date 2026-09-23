@@ -1,4 +1,4 @@
-# main ブランチに push されたらリポジトリ全体を GitHub Pages に公開する。
+# main ブランチに push されたら、家計簿のテストを実行してからリポジトリ全体を GitHub Pages に公開する。
 # 初回はリポジトリの Settings → Pages で「Source: GitHub Actions」を選ぶ
 # （configure-pages の enablement で自動有効化を試みるが、権限により手動が必要な場合がある）。
 name: Deploy to GitHub Pages
@@ -14,7 +14,19 @@ concurrency:
   group: pages
   cancel-in-progress: true
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm init -y >/dev/null && npm i --no-save playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - run: node kakeibo/test/e2e.js
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     environment:
       name: github-pages
