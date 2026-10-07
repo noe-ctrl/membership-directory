@@ -84,15 +84,15 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('#in-cats .chip:nth-child(1)');
     await page.click('#in-items .chip:nth-child(1)');
     await page.fill('#in-memo', 'テスト');
-    await page.click('button:has-text("保存する")');
+    await page.click('#save-btn');
     check('支出の保存', (await text(page, '#day-entries')).includes('スーパー'));
     await page.click('#type-inc');
     await page.fill('#in-amount', '300000'); await page.selectOption('#in-account', '銀行口座');
-    await page.click('button:has-text("保存する")');
+    await page.click('#save-btn');
     await page.click('#type-trn');
     await page.selectOption('#in-from', '銀行口座'); await page.selectOption('#in-to', '現金');
     await page.fill('#in-amount', '20000');
-    await page.click('button:has-text("保存する")');
+    await page.click('#save-btn');
     check('振替の保存', (await text(page, '#day-entries')).includes('銀行口座 → 現金'));
     await shot(page, '01-input');
 
@@ -106,7 +106,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.fill('#in-amount', ''); await page.fill('#in-item', '');
     await page.click('#fav-row .chip');
     check('お気に入りで入力欄が埋まる', (await page.inputValue('#in-amount')) === '398' && (await page.inputValue('#in-item')) === 'トイレットペーパー');
-    await page.click('button:has-text("保存する")');
+    await page.click('#save-btn');
     await page.click('#view-input .entry:has-text("トイレットペーパー")');
     await page.waitForSelector('#modal.open');
     await page.click('button:has-text("複製して入力")');
@@ -294,7 +294,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     catch (e) { check('復号の完了', false, 'lock-err=' + await text(page, '#lock-err') + ' errors=' + page.errors.join('/')); }
     await wait(300);
     check('復号後にデータが読める', (await text(page, '#day-entries')).includes('トイレットペーパー'));
-    await page.fill('#in-amount', '55'); await page.click('button:has-text("保存する")'); await wait(800);
+    await page.fill('#in-amount', '55'); await page.click('#save-btn'); await wait(800);
     const rawEnc2 = await page.evaluate(() => localStorage.getItem('kakeibo.v1'));
     check('暗号化中の保存も暗号化される', rawEnc2.includes('"enc":1') && !rawEnc2.includes('"entries"'));
     // 大きなデータ（約300KB）でも暗号化保存できる
@@ -335,7 +335,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // B で追加 → A で受信
     await pageB.click('[data-view=input]');
     await pageB.fill('#in-amount', '777'); await pageB.fill('#in-memo', '端末Bから');
-    await pageB.click('button:has-text("保存する")');
+    await pageB.click('#save-btn');
     await wait(4800); // 自動同期（4秒デバウンス）
     await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
     const hasB = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.some(e => e.memo === '端末Bから'));
@@ -438,7 +438,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
 
     // ── ダークモード ──
     const dark = await newPage(browser, { colorScheme: 'dark' });
-    await dark.fill('#in-amount', '500'); await dark.click('button:has-text("保存する")');
+    await dark.fill('#in-amount', '500'); await dark.click('#save-btn');
     await dark.click('[data-view=report]');
     const bg = await dark.evaluate(() => getComputedStyle(document.body).backgroundColor);
     check('ダークモードの背景', bg === 'rgb(21, 21, 20)', bg);
@@ -460,7 +460,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('グラフ上位8分類の色が重ならない', dots.length === 8 && new Set(dots).size === 8, dots.join(','));
     await ux.click('[data-view=input]');
     await ux.selectOption('#in-account', 'クレジットカード');
-    await ux.fill('#in-amount', '300'); await ux.click('button:has-text("保存する")');
+    await ux.fill('#in-amount', '300'); await ux.click('#save-btn');
     await ux.reload(); await ux.waitForSelector('#view-input.active');
     check('前回の支払方法を覚えている', (await ux.inputValue('#in-account')) === 'クレジットカード');
     await ux.click('#type-inc');
@@ -480,10 +480,15 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('電卓の計算結果（掛け算を先に計算）', (await text(ux, '#calc-rs')).includes('¥1,980'));
     await ux.click('#calc-keys button[data-k="確定"]');
     check('電卓の確定で金額欄に入る', (await ux.inputValue('#in-amount')) === '1980' && !(await ux.isVisible('#calc')));
-    await ux.fill('#in-amount', '１０００÷３'); await ux.click('button:has-text("保存する")'); await wait(100);
+    await ux.click('#type-exp');
+    await ux.fill('#in-amount', '1280+350');
+    check('保存ボタンに計算結果の金額を表示', (await text(ux, '#save-btn')).includes('支出 ¥1,630 を保存'), await text(ux, '#save-btn'));
+    const stick = await ux.evaluate(() => { window.scrollTo(0, 0); const r = document.getElementById('save-btn').getBoundingClientRect(); const tab = document.querySelector('.tabbar').getBoundingClientRect(); return r.bottom <= tab.top && r.top >= 0; });
+    check('保存ボタンはスクロールせずに押せる位置にある（320×640）', stick);
+    await ux.fill('#in-amount', '１０００÷３'); await ux.click('#save-btn'); await wait(100);
     const calcSaved = await ux.evaluate(() => db.entries[db.entries.length - 1].amount);
     check('計算式を直接入力して保存（全角も可）', calcSaved === 333, String(calcSaved));
-    await ux.fill('#in-amount', '100+'); await ux.click('button:has-text("保存する")'); await wait(100);
+    await ux.fill('#in-amount', '100+'); await ux.click('#save-btn'); await wait(100);
     check('不完全な計算式は保存しない', (await ux.evaluate(() => db.entries[db.entries.length - 1].amount)) === 333 && (await text(ux, '#toast')).includes('金額'));
     // カレンダー: 週ごとの収支・日記
     await ux.click('[data-view=calendar]');

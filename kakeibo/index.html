@@ -130,6 +130,9 @@
       background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px;
     }
     .input:focus, .select:focus, .textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,70,229,.08); }
+    .input.amount.expr { font-size: 15px; letter-spacing: 0; }
+    .row2.date-amt { grid-template-columns: minmax(0, 9fr) minmax(0, 11fr); }
+    .row2.date-amt input[type=date] { padding-left: 10px; padding-right: 6px; }
     .input.amount { font-size: 26px; font-weight: 800; text-align: right; letter-spacing: .02em; }
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
@@ -144,6 +147,8 @@
       cursor: pointer;
     }
     .btn:active { opacity: .88; }
+    /* 入力画面の保存ボタンはスクロールしても画面下（タブの上）に残す */
+    .save-sticky { position: sticky; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 10px); z-index: 5; box-shadow: 0 6px 18px rgba(79,70,229,.28); }
     .btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--line); }
     .btn.danger { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-line); }
     .btn.sm { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; border-radius: 10px; }
@@ -372,8 +377,8 @@
 
     /* ─── 電卓パレット ───────────────────── */
     .amt-wrap { position: relative; }
-    .amt-wrap .input.amount { padding-left: 46px; }
-    .calc-btn { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border: none; border-radius: 10px; background: var(--chip); font-size: 17px; cursor: pointer; }
+    .amt-wrap .input.amount { padding-left: 42px; }
+    .calc-btn { position: absolute; left: 5px; top: 50%; transform: translateY(-50%); width: 33px; height: 33px; border: none; border-radius: 10px; background: var(--chip); font-size: 17px; cursor: pointer; }
     .calc { position: fixed; inset: 0; z-index: 70; display: none; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.25); }
     .calc.open { display: flex; }
     .calc-box { width: 100%; max-width: 420px; background: var(--card); border-radius: 22px 22px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); box-shadow: var(--shadow); }
@@ -416,14 +421,14 @@
       </div>
       <div id="backup-note"></div>
       <div id="fav-row" class="chips" style="margin-bottom:10px"></div>
-      <div class="row2">
+      <div class="row2 date-amt">
         <div class="field">
           <label>日付</label>
           <input id="in-date" class="input" type="date" onchange="renderDayEntries()">
         </div>
         <div class="field">
-          <label>金額（円）<span class="muted" style="font-weight:400">・計算式も可</span></label>
-          <div class="amt-wrap"><button type="button" class="calc-btn" onclick="openCalc('in-amount')" aria-label="電卓で入力">🧮</button><input id="in-amount" class="input amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off"></div>
+          <label>金額（円）</label>
+          <div class="amt-wrap"><button type="button" class="calc-btn" onclick="openCalc('in-amount')" aria-label="電卓で入力">🧮</button><input id="in-amount" class="input amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off" title="1280+350 のような計算式も入力できます"></div>
         </div>
       </div>
       <div id="in-catblock">
@@ -458,7 +463,7 @@
           <select id="in-account" class="select"></select>
         </div>
       </div>
-      <button class="btn" onclick="saveEntry()">保存する</button>
+      <button class="btn save-sticky" id="save-btn" onclick="saveEntry()">保存する</button>
       <div class="btn-row">
         <button class="btn secondary sm" onclick="openReceipt()">🧾 レシートをまとめて入力（📷 読み取り対応）</button>
         <button class="btn secondary sm" id="fav-add-btn" onclick="addFavorite()">☆ よく使う入力に登録</button>
@@ -1069,6 +1074,7 @@ function renderInput() {
     to.innerHTML = accountOptions(to.value || accountNames()[1] || accountNames()[0], false);
     renderFavorites();
     renderDayEntries();
+    updateSaveLabel();
     return;
   }
   const cats = catsOf(ui.entryType);
@@ -1087,6 +1093,7 @@ function renderInput() {
   renderFavorites();
   renderBackupNote();
   renderDayEntries();
+  updateSaveLabel();
 }
 function pickCat(name) { ui.entryCat = name; document.getElementById('in-item').value = ''; renderInput(); }
 function itemHistory(type, category) {
@@ -1168,6 +1175,14 @@ function saveEntry() {
   document.getElementById('in-memo').value = '';
   toast(typeLabel(e.type) + ' ' + fmtYen(e.amount) + ' を保存しました');
   renderInput();
+}
+// 保存ボタンに種別と金額（計算式なら計算結果）を表示する
+function updateSaveLabel() {
+  const btn = document.getElementById('save-btn'); if (!btn) return;
+  const el = document.getElementById('in-amount');
+  const v = calcAmount(el.value);
+  el.classList.toggle('expr', isExpr(el.value)); // 計算式の間は文字を小さくして全体を見せる
+  btn.textContent = v ? typeLabel(ui.entryType) + ' ' + fmtYen(Math.abs(v)) + ' を保存' : '保存する';
 }
 function renderDayEntries() {
   const date = document.getElementById('in-date').value || todayStr();
@@ -2750,6 +2765,7 @@ function bootAfterLoad() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('in-date').value = todayStr();
   document.getElementById('in-amount').addEventListener('keydown', ev => { if (ev.key === 'Enter') saveEntry(); });
+  document.getElementById('in-amount').addEventListener('input', updateSaveLabel);
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { if (calcTarget) closeCalc(); else closeModal(); } });
   if (pendingEnvelope) {
     document.querySelector('#lock .small').textContent = 'データは暗号化されています。暗証番号を入力して開きます';
