@@ -566,6 +566,19 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
       return { f: [9999, 10320, 123456, 1234567].map(fmtCompact).join(' '), cut };
     });
     check('カレンダーの金額が細かく表示されマスに収まる', calAmt.f === '9,999 1.03万 12.3万 123万' && calAmt.cut.length === 0, JSON.stringify(calAmt));
+    // 印刷・PDF: 印刷用の表を作って印刷画面を開く（印刷時はアプリ画面を隠す）
+    await ux.evaluate(() => { window.print = () => { window.__printed = (window.__printed || 0) + 1; }; });
+    await ux.click('[data-view=report]'); await ux.click('#rep-month');
+    await ux.click('text=この月を印刷・PDF');
+    const pr = await ux.evaluate(() => ({ n: window.__printed, t: document.getElementById('print-area').textContent }));
+    check('月の印刷: 合計・内訳・予算比・明細を含む', pr.n === 1 && pr.t.includes('の家計簿') && pr.t.includes('予算との比較') && pr.t.includes('交際費') && /明細（\d+件）/.test(pr.t), pr.t.slice(0, 100));
+    await ux.emulateMedia({ media: 'print' });
+    const prVis = await ux.evaluate(() => ({ area: getComputedStyle(document.getElementById('print-area')).display, tab: getComputedStyle(document.querySelector('.tabbar')).display }));
+    await ux.emulateMedia({ media: 'screen' });
+    check('印刷時は印刷用の表だけを表示', prVis.area === 'block' && prVis.tab === 'none', JSON.stringify(prVis));
+    await ux.click('#rep-year'); await ux.click('text=この年を印刷・PDF');
+    check('年の印刷: 月別の収支を含む', (await ux.evaluate(() => document.getElementById('print-area').textContent)).includes('月別の収支'));
+    await ux.click('#rep-month');
     // 日記は入力欄から離れなくても少し待てば保存される
     await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');
     await ux.fill('#diary-text', '入力途中の日記'); await wait(1200);

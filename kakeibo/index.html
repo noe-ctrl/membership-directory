@@ -393,6 +393,30 @@
     .calc-keys button.op { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
     .calc-keys button.ok { background: var(--accent); color: #fff; border: none; grid-row: span 2; height: auto; font-size: 17px; }
     .calc-keys button.wide { grid-column: span 2; }
+
+    /* ─── 印刷・PDF ───────────────────────── */
+    #print-area { display: none; }
+    @media print {
+      @page { size: A4; margin: 14mm 12mm; }
+      :root { --bg: #fff; --card: #fff; --text: #111; --sub: #555; --line: #bbb; --line2: #ddd; --income: #0f7a4f; --expense: #b42318; color-scheme: light; }
+      html, body { background: #fff !important; color: #111; }
+      body > *:not(#print-area) { display: none !important; }
+      #print-area { display: block; font-size: 10.5pt; }
+      #print-area h1 { font-size: 16pt; margin: 0 0 2mm; }
+      #print-area h2 { font-size: 12pt; margin: 6mm 0 2mm; border-bottom: 1.5pt solid #333; padding-bottom: 1mm; }
+      #print-area .meta { color: #555; font-size: 9pt; margin-bottom: 4mm; }
+      #print-area table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+      #print-area tr { page-break-inside: avoid; }
+      #print-area th, #print-area td { border-bottom: .5pt solid #ccc; padding: 1.2mm 1.5mm; text-align: left; vertical-align: top; }
+      #print-area th { background: #f2f2f2; font-size: 9pt; }
+      #print-area td.r, #print-area th.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      #print-area tr.sub td { color: #555; font-size: 9pt; }
+      #print-area tr.sub td:first-child { padding-left: 6mm; }
+      #print-area tr.total td { font-weight: 700; border-top: 1pt solid #333; }
+      #print-area .inc { color: #0f7a4f; } #print-area .exp { color: #b42318; }
+      #print-area .sum3 { display: flex; gap: 4mm; } #print-area .sum3 div { flex: 1; border: .5pt solid #bbb; border-radius: 2mm; padding: 2mm 3mm; }
+      #print-area .sum3 b { display: block; font-size: 13pt; }
+    }
   </style>
 </head>
 <body>
@@ -650,6 +674,7 @@
   <div class="modal-box" id="modal-box"></div>
 </div>
 <div id="toast"></div>
+<div id="print-area"></div>
 <div id="calc" class="calc" onclick="if(event.target===this) closeCalc()">
   <div class="calc-box" role="dialog" aria-label="電卓">
     <div class="calc-disp"><div class="ex" id="calc-ex"></div><div class="rs num" id="calc-rs">¥0</div></div>
@@ -1453,6 +1478,7 @@ function monthReportHtml() {
   });
   html += '</div></div><div class="hint">分類をタップすると項目ごとの内訳を表示します。</div></div>';
   html += trendCardHtml(type);
+  html += '<div class="btn-row" style="margin-bottom:14px"><button class="btn secondary sm" onclick="printReport(\'month\')">🖨 この月を印刷・PDF</button></div>';
   return html;
 }
 function trendCardHtml(type) {
@@ -1549,9 +1575,55 @@ function yearReportHtml() {
     });
     html += '</div>';
   }
+  html += '<div class="btn-row" style="margin-bottom:14px"><button class="btn secondary sm" onclick="printReport(\'year\')">🖨 この年を印刷・PDF</button></div>';
   return html;
 }
 function jumpMonth(ym) { ui.month = ym; setReportMode('month'); }
+
+/* ─── 印刷・PDF（印刷用の表を作ってブラウザの印刷を開く） ─── */
+function printTableBreakdown(list, total, budgets) {
+  const rows = breakdown(list);
+  if (!rows.length) return '<p>なし</p>';
+  let h = '<table><tr><th>分類 / 項目</th><th class="r">金額</th><th class="r">割合</th>' + (budgets ? '<th class="r">予算</th><th class="r">予算比</th>' : '') + '</tr>';
+  rows.forEach(r => {
+    const b = budgets ? budgets[r.name] || 0 : 0;
+    h += '<tr><td><b>' + esc(r.name) + '</b></td><td class="r">' + fmtYen(r.total) + '</td><td class="r">' + (total ? Math.round(r.total / total * 1000) / 10 : 0) + '%</td>'
+      + (budgets ? '<td class="r">' + (b ? fmtYen(b) : '—') + '</td><td class="r' + (b && r.total > b ? ' exp' : '') + '">' + (b ? Math.round(r.total / b * 100) + '%' : '—') + '</td>' : '') + '</tr>';
+    [...r.items.entries()].sort((a, b2) => b2[1] - a[1]).forEach(([k, v]) => { h += '<tr class="sub"><td>' + esc(k) + '</td><td class="r">' + fmtYen(v) + '</td><td></td>' + (budgets ? '<td></td><td></td>' : '') + '</tr>'; });
+  });
+  return h + '<tr class="total"><td>合計</td><td class="r">' + fmtYen(total) + '</td><td class="r">100%</td>' + (budgets ? '<td class="r">' + (budgets.__total ? fmtYen(budgets.__total) : '—') + '</td><td class="r">' + (budgets.__total ? Math.round(total / budgets.__total * 100) + '%' : '—') + '</td>' : '') + '</tr></table>';
+}
+function printSummary(inc, ex) {
+  return '<div class="sum3"><div>収入<b class="inc">' + fmtYen(inc) + '</b></div><div>支出<b class="exp">' + fmtYen(ex) + '</b></div><div>収支<b' + (inc - ex < 0 ? ' class="exp"' : '') + '>' + fmtYen(inc - ex) + '</b></div></div>';
+}
+function printReport(kind) {
+  const now = new Date();
+  const meta = '<div class="meta">作成日 ' + now.getFullYear() + '/' + (now.getMonth() + 1) + '/' + now.getDate() + '・家計簿アプリ</div>';
+  let html = '';
+  if (kind === 'year') {
+    const year = ui.month.slice(0, 4);
+    const months = []; for (let m = 1; m <= 12; m++) { const ym = year + '-' + pad2(m); const l = entriesInMonth(ym); months.push({ m, list: l, inc: sumBy(l, 'income'), ex: sumBy(l, 'expense') }); }
+    const all = months.flatMap(x => x.list), tInc = sumBy(all, 'income'), tEx = sumBy(all, 'expense');
+    html = '<h1>' + year + '年の家計簿</h1>' + meta + printSummary(tInc, tEx)
+      + '<h2>月別の収支</h2><table><tr><th>月</th><th class="r">収入</th><th class="r">支出</th><th class="r">収支</th></tr>'
+      + months.map(x => '<tr><td>' + x.m + '月</td><td class="r">' + fmtYen(x.inc) + '</td><td class="r">' + fmtYen(x.ex) + '</td><td class="r' + (x.inc - x.ex < 0 ? ' exp' : '') + '">' + fmtYen(x.inc - x.ex) + '</td></tr>').join('')
+      + '<tr class="total"><td>合計</td><td class="r">' + fmtYen(tInc) + '</td><td class="r">' + fmtYen(tEx) + '</td><td class="r">' + fmtYen(tInc - tEx) + '</td></tr></table>'
+      + '<h2>支出の内訳（分類別）</h2>' + printTableBreakdown(all.filter(e => e.type === 'expense'), tEx)
+      + '<h2>収入の内訳（分類別）</h2>' + printTableBreakdown(all.filter(e => e.type === 'income'), tInc);
+  } else {
+    const ym = ui.month, list = entriesInMonth(ym), inc = sumBy(list, 'income'), ex = sumBy(list, 'expense');
+    const b = db.budgets.overrides[ym] || db.budgets;
+    const budgets = Object.assign({ __total: b.total }, b.categories);
+    html = '<h1>' + fmtMonth(ym) + 'の家計簿</h1>' + (startDay() !== 1 ? '<div class="meta">期間 ' + fmtRange(ym) + '</div>' : '') + meta + printSummary(inc, ex)
+      + '<h2>支出の内訳（予算との比較）</h2>' + printTableBreakdown(list.filter(e => e.type === 'expense'), ex, budgets)
+      + '<h2>収入の内訳</h2>' + printTableBreakdown(list.filter(e => e.type === 'income'), inc)
+      + '<h2>明細（' + list.length + '件）</h2><table><tr><th>日付</th><th>種別</th><th>分類 / 項目</th><th>メモ・店名</th><th>口座</th><th class="r">金額</th></tr>'
+      + sortEntries(list).reverse().map(e => '<tr><td>' + Number(e.date.slice(5, 7)) + '/' + Number(e.date.slice(8)) + '</td><td>' + typeLabel(e.type) + '</td><td>' + esc(e.type === 'transfer' ? '振替' : e.category + (e.item ? ' / ' + e.item : '')) + '</td><td>' + esc([e.memo, e.store].filter(Boolean).join(' · ')) + '</td><td>' + esc(e.type === 'transfer' ? e.account + ' → ' + (e.toAccount || '') : e.account) + '</td><td class="r ' + (e.type === 'income' ? 'inc' : e.type === 'expense' ? 'exp' : '') + '">' + (e.type === 'income' ? '+' : e.type === 'expense' ? '-' : '') + fmtYen(e.amount) + '</td></tr>').join('')
+      + '</table>';
+  }
+  document.getElementById('print-area').innerHTML = html;
+  window.print();
+}
 
 /* ─── 予算 ───────────────────────────── */
 function renderBudget() {
