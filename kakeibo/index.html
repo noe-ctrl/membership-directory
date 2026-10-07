@@ -1293,7 +1293,7 @@ function diaryHtml(ds) {
   const dy = db.diary[ds] || { w: '', t: '' };
   return '<div class="diary"><div class="card-title" style="margin:14px 0 8px">日記</div>'
     + '<div class="chips" style="margin-bottom:8px">' + WEATHERS.map(([k, ic, nm]) => '<button class="chip' + (dy.w === k ? ' on' : '') + '" onclick="setDiaryWeather(\'' + ds + '\', \'' + k + '\')">' + ic + ' ' + nm + '</button>').join('') + '</div>'
-    + '<textarea id="diary-text" class="input textarea" rows="3" placeholder="今日のできごと・買い物のメモなど" onchange="setDiaryText(\'' + ds + '\', this.value)">' + esc(dy.t) + '</textarea></div>';
+    + '<textarea id="diary-text" class="input textarea" rows="3" placeholder="今日のできごと・買い物のメモなど" oninput="diaryTyping(\'' + ds + '\', this.value)" onchange="setDiaryText(\'' + ds + '\', this.value)">' + esc(dy.t) + '</textarea></div>';
 }
 function updateDiary(ds, patch) {
   const v = sanitizeDiaryDay(Object.assign({}, db.diary[ds] || {}, patch));
@@ -1311,7 +1311,14 @@ function diaryMark(ds) {
   return (dy.w ? (WEATHERS.find(x => x[0] === dy.w) || [])[1] || '' : '') || (dy.t ? '✎' : '');
 }
 // 入力欄から離れたときに保存。他の日付へのタップを妨げないよう、該当日のマークだけ書き換える
+// 入力中も少し間を置いて保存する（入力欄から離れる前にアプリを閉じても消えないように）
+let diaryTimer = null;
+function diaryTyping(ds, t) {
+  clearTimeout(diaryTimer);
+  diaryTimer = setTimeout(() => { updateDiary(ds, { t }); const mk = document.querySelector('#cal-grid .cell[data-ds="' + ds + '"] .dw'); if (mk) mk.textContent = diaryMark(ds); }, 800);
+}
 function setDiaryText(ds, t) {
+  clearTimeout(diaryTimer);
   updateDiary(ds, { t });
   const mk = document.querySelector('#cal-grid .cell[data-ds="' + ds + '"] .dw'); if (mk) mk.textContent = diaryMark(ds);
   toast('日記を保存しました');

@@ -520,6 +520,11 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.reload();
     const booted = await ux.waitForSelector('#view-input.active', { timeout: 5000 }).then(() => true, () => false);
     check('全種類のデータがある状態で再起動できる（定期収支など）', booted && (await ux.evaluate(() => db.recurring.length === 1 && Object.keys(db.diary).length === 1)), ux.errors.join(' / '));
+    // 日記は入力欄から離れなくても少し待てば保存される
+    await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');
+    await ux.fill('#diary-text', '入力途中の日記'); await wait(1200);
+    await ux.reload(); await ux.waitForSelector('#view-input.active');
+    check('日記は入力中にも自動保存される', (await ux.evaluate(d => (JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d] || {}).t, today)) === '入力途中の日記');
     const uxErr = ux.errors.slice();
     await ux.context().close();
 
