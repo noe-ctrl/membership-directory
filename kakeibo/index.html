@@ -179,7 +179,7 @@
     .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
     .summary .tile {
       background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 10px;
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow); min-width: 0;
     }
     .tile .k { font-size: 11px; color: var(--sub); font-weight: 700; }
     .tile .v { font-size: 17px; font-weight: 800; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -728,6 +728,7 @@ function normalizeDb(data) {
       ocrKey: String(d.settings && d.settings.ocrKey || ''),
       encrypt: !!(d.settings && d.settings.encrypt),
       lastBackupAt: num0(d.settings && d.settings.lastBackupAt),
+      lastAccount: { expense: String(d.settings && d.settings.lastAccount && d.settings.lastAccount.expense || ''), income: String(d.settings && d.settings.lastAccount && d.settings.lastAccount.income || '') },
       startDay: Math.min(28, Math.max(1, Math.round(num0(d.settings && d.settings.startDay)) || 1)),
       sync: {
         url: String(d.settings && d.settings.sync && d.settings.sync.url || ''),
@@ -856,6 +857,17 @@ function catColor(type, name) {
   if (c.color != null) return c.color === 8 ? OTHER_COLOR : seriesColor(c.color);
   return idx < 8 ? seriesColor(idx) : OTHER_COLOR;
 }
+// グラフ用の色: 金額の多い順に、分類の色を優先しつつ重ならない色を割り当てる（上位8つまで。残りはグレー）
+function chartColors(type, names) {
+  const cats = catsOf(type), out = new Map(), used = new Set();
+  const own = name => { const idx = cats.findIndex(c => c.name === name); if (idx < 0) return 8; const c = cats[idx]; return c.color != null ? c.color : (idx < 8 ? idx : 8); };
+  const top = names.slice(0, 8);
+  top.forEach(n => { const k = own(n); if (k !== 8 && !used.has(k)) { out.set(n, k); used.add(k); } });
+  top.forEach(n => { if (out.has(n)) return; for (let k = 0; k < 8; k++) if (!used.has(k)) { out.set(n, k); used.add(k); return; } });
+  const res = new Map();
+  names.forEach(n => res.set(n, out.has(n) ? seriesColor(out.get(n)) : OTHER_COLOR));
+  return res;
+}
 function startDay() { return db.settings.startDay || 1; }
 function addDays(ds, n) { const [y, m, d] = ds.split('-').map(Number); const t = new Date(y, m - 1, d + n); return t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()); }
 function periodOf(ds) { const sd = startDay(); if (sd === 1) return ds.slice(0, 7); return Number(ds.slice(8)) >= sd ? ds.slice(0, 7) : addMonths(ds.slice(0, 7), -1); }
@@ -976,6 +988,13 @@ function setEntryType(t) {
   document.getElementById('type-inc').className = t === 'income' ? 'on inc' : '';
   document.getElementById('type-trn').className = t === 'transfer' ? 'on trn' : '';
   renderInput();
+  presetAccount();
+}
+// 前回その種別で使った支払方法・口座を初期値にする
+function presetAccount() {
+  if (ui.entryType === 'transfer') return;
+  const name = db.settings.lastAccount[ui.entryType];
+  document.getElementById('in-account').value = name && db.accounts.find(a => a.name === name) ? name : '';
 }
 function renderInput() {
   const dateEl = document.getElementById('in-date');
@@ -1082,6 +1101,7 @@ function saveEntry() {
       account: document.getElementById('in-account').value
     };
     ensureCategory(e.type, e.category, item);
+    db.settings.lastAccount[e.type] = e.account;
   }
   db.entries.push(e);
   saveDb();
@@ -1139,7 +1159,7 @@ function summaryTiles(list, prev) {
   const delta = (cur, p, worseIfUp) => {
     if (!prev) return '';
     const d = cur - p; const cls = d === 0 ? '' : ((d > 0) === worseIfUp ? ' exp' : ' inc');
-    return '<div class="delta">前月 ' + fmtYen(p) + ' <span class="' + cls + '">' + (d >= 0 ? '+' : '-') + fmtYen(Math.abs(d)) + '</span></div>';
+    return '<div class="delta" title="前月 ' + fmtYen(p) + '">前月比 <span class="' + cls + '">' + (d >= 0 ? '+' : '-') + fmtYen(Math.abs(d)) + '</span></div>';
   };
   const pInc = prev ? sumBy(prev, 'income') : 0, pEx = prev ? sumBy(prev, 'expense') : 0;
   return '<div class="tile"><div class="k">収入</div><div class="v num inc">' + fmtYen(inc) + '</div>' + delta(inc, pInc, false) + '</div>'
@@ -1154,11 +1174,11 @@ function renderList() {
   const allPeriod = document.getElementById('list-all').checked && q;
   const base = allPeriod ? db.entries : entriesInMonth(ui.month);
   const list = q ? base.filter(e => entrySearchText(e).includes(q)) : base;
-  document.getElementById('list-summary').innerHTML = summaryTiles(allPeriod ? list : base);
+  document.getElementById('list-summary').innerHTML = summaryTiles(list);
   let note = '';
   let shown = list;
-  if (allPeriod) {
-    note = '<div class="small" style="margin-bottom:6px">全期間の検索結果: ' + list.length.toLocaleString() + '件' + (list.length > 300 ? '（新しい300件を表示）' : '') + '</div>';
+  if (q) {
+    note = '<div class="small" style="margin-bottom:6px">' + (allPeriod ? '全期間' : fmtMonth(ui.month)) + 'の検索結果: ' + list.length.toLocaleString() + '件（上の合計は検索結果の合計）' + (list.length > 300 ? '・新しい300件を表示' : '') + '</div>';
     if (list.length > 300) shown = sortEntries(list).slice(0, 300);
   }
   document.getElementById('list-body').innerHTML = note + (shown.length ? groupedByDay(shown)
@@ -1241,10 +1261,11 @@ function monthReportHtml() {
     + '<button class="' + (type === 'expense' ? 'on exp' : '') + '" onclick="setReportType(\'expense\')">支出の内訳</button>'
     + '<button class="' + (type === 'income' ? 'on inc' : '') + '" onclick="setReportType(\'income\')">収入の内訳</button></div>';
   if (!rows.length) { return html + '<div class="small" style="text-align:center;padding:20px 0">この月の' + (type === 'income' ? '収入' : '支出') + 'はありません</div></div>'; }
-  html += '<div class="donut-wrap">' + donutSvg(rows, total, type) + '<div class="legend">';
+  const colors = chartColors(type, rows.map(r => r.name));
+  html += '<div class="donut-wrap">' + donutSvg(rows, total, type, colors) + '<div class="legend">';
   rows.forEach(r => {
     const pct = total ? Math.round(r.total / total * 1000) / 10 : 0;
-    const color = catColor(type, r.name);
+    const color = colors.get(r.name);
     const open = ui.reportOpen === r.name;
     const pd = r.total - (prevBy[r.name] || 0);
     html += '<div class="lrow" onclick="toggleReportOpen(this.dataset.n)" data-n="' + esc(r.name) + '">'
@@ -1268,22 +1289,25 @@ function trendCardHtml(type) {
     const v = entriesInMonth(ym).filter(e => e.type === type && (!sel || e.category === sel)).reduce((s, e) => s + e.amount, 0);
     months.push({ ym, v }); if (v > max) max = v;
   }
-  const W = 640, H = 200, padL = 8, padB = 24, top = 10, bw = (W - padL * 2) / 12;
+  const W = 640, H = 220, padL = 8, padB = 34, top = 10, bw = (W - padL * 2) / 12;
   const color = sel ? catColor(type, sel) : (type === 'income' ? colorInc() : colorExp());
   let svg = '<svg class="yearchart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(sel || typeLabel(type)) + 'の12か月の推移">';
   for (let g = 1; g <= 4; g++) { const y = top + (H - padB - top) * (1 - g / 4); svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--grid)" stroke-width="1"/>'; }
   months.forEach((x, i) => {
     const h = (H - padB - top) * x.v / max, x0 = padL + i * bw + 6, w = bw - 12;
     if (x.v) svg += '<rect x="' + x0 + '" y="' + (H - padB - h) + '" width="' + w + '" height="' + h + '" rx="3" fill="' + color + '" opacity="' + (x.ym === ui.month ? 1 : 0.7) + '"><title>' + fmtMonth(x.ym) + ' ' + fmtYen(x.v) + '</title></rect>';
-    svg += '<text x="' + (x0 + w / 2) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="11" style="fill:var(--muted)">' + Number(x.ym.slice(5)) + '月</text>';
+    svg += '<text x="' + (x0 + w / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="20" style="fill:var(--muted)">' + Number(x.ym.slice(5)) + '</text>';
   });
   svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '" style="stroke:var(--line)"/></svg>';
-  const avg = Math.round(months.reduce((s, x) => s + x.v, 0) / 12);
+  // 記録を始める前の月（0円）を平均に含めない
+  const firstYm = db.entries.length ? periodOf(db.entries.reduce((m, e) => (e.date < m ? e.date : m), db.entries[0].date)) : ui.month;
+  const counted = months.filter(x => x.ym >= firstYm && x.ym <= currentPeriod());
+  const avg = counted.length ? Math.round(counted.reduce((s, x) => s + x.v, 0) / counted.length) : 0;
   return '<div class="card"><div class="card-title"><span>' + typeLabel(type) + 'の推移（12か月）</span>'
     + '<select class="select" style="width:auto;padding:6px 28px 6px 10px;font-size:13px;border-radius:10px" onchange="ui.trendCat=this.value;renderReport()"><option value="">全体</option>' + cats.map(c => '<option value="' + esc(c.name) + '"' + (c.name === sel ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select></div>'
-    + svg + '<div class="small num">12か月平均 ' + fmtYen(avg) + '</div></div>';
+    + svg + '<div class="small num">月平均 ' + fmtYen(avg) + (counted.length < 12 ? '（記録のある' + counted.length + 'か月）' : '（12か月）') + '</div></div>';
 }
-function donutSvg(rows, total, type) {
+function donutSvg(rows, total, type, colors) {
   const R = 80, r = 52, cx = 90, cy = 90;
   let angle = -Math.PI / 2, paths = '';
   rows.forEach(r0 => {
@@ -1298,7 +1322,7 @@ function donutSvg(rows, total, type) {
     const d = frac >= 0.9999
       ? 'M' + (cx + R) + ',' + cy + ' A' + R + ',' + R + ' 0 1 1 ' + (cx - R) + ',' + cy + ' A' + R + ',' + R + ' 0 1 1 ' + (cx + R) + ',' + cy + ' M' + (cx + r) + ',' + cy + ' A' + r + ',' + r + ' 0 1 0 ' + (cx - r) + ',' + cy + ' A' + r + ',' + r + ' 0 1 0 ' + (cx + r) + ',' + cy
       : 'M' + x1 + ',' + y1 + ' A' + R + ',' + R + ' 0 ' + large + ' 1 ' + x2 + ',' + y2 + ' L' + x3 + ',' + y3 + ' A' + r + ',' + r + ' 0 ' + large + ' 0 ' + x4 + ',' + y4 + ' Z';
-    paths += '<path d="' + d + '" fill="' + catColor(type, r0.name) + '" fill-rule="evenodd" style="stroke:var(--card)" stroke-width="2"><title>' + esc(r0.name) + ' ' + fmtYen(r0.total) + '</title></path>';
+    paths += '<path d="' + d + '" fill="' + colors.get(r0.name) + '" fill-rule="evenodd" style="stroke:var(--card)" stroke-width="2"><title>' + esc(r0.name) + ' ' + fmtYen(r0.total) + '</title></path>';
     angle = a2;
   });
   return '<svg class="donut" viewBox="0 0 180 180" role="img" aria-label="' + (type === 'income' ? '収入' : '支出') + 'の内訳">' + paths
@@ -1315,7 +1339,7 @@ function yearReportHtml() {
   }
   const tInc = months.reduce((s, x) => s + x.inc, 0), tEx = months.reduce((s, x) => s + x.ex, 0);
   const max = Math.max(1, ...months.map(x => Math.max(x.inc, x.ex)));
-  const W = 640, H = 220, padL = 8, padB = 24, top = 10;
+  const W = 640, H = 240, padL = 8, padB = 34, top = 10;
   const bw = (W - padL * 2) / 12;
   let svg = '<svg class="yearchart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + year + '年の月別収支">';
   for (let g = 1; g <= 4; g++) { const y = top + (H - padB - top) * (1 - g / 4); svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--grid)" stroke-width="1"/>'; }
@@ -1324,7 +1348,7 @@ function yearReportHtml() {
     const hI = (H - padB - top) * x.inc / max, hE = (H - padB - top) * x.ex / max;
     if (x.inc) svg += '<rect x="' + (x0 + gap) + '" y="' + (H - padB - hI) + '" width="' + w + '" height="' + hI + '" rx="3" fill="' + colorInc() + '"><title>' + x.m + '月 収入 ' + fmtYen(x.inc) + '</title></rect>';
     if (x.ex) svg += '<rect x="' + (x0 + gap * 2 + w) + '" y="' + (H - padB - hE) + '" width="' + w + '" height="' + hE + '" rx="3" fill="' + colorExp() + '"><title>' + x.m + '月 支出 ' + fmtYen(x.ex) + '</title></rect>';
-    svg += '<text x="' + (x0 + bw / 2) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="12" style="fill:var(--muted)">' + x.m + '月</text>';
+    svg += '<text x="' + (x0 + bw / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="20" style="fill:var(--muted)">' + x.m + '</text>';
   });
   svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '" style="stroke:var(--line)"/></svg>';
   let html = '<div class="summary">'
@@ -1343,9 +1367,10 @@ function yearReportHtml() {
   const rows = breakdown(months.flatMap(x => entriesInMonth(x.ym)).filter(e => e.type === 'expense'));
   if (rows.length) {
     html += '<div class="card"><div class="card-title">' + year + '年 分類別の支出</div>';
+    const colors = chartColors('expense', rows.map(r => r.name));
     rows.forEach(r => {
       const pct = tEx ? Math.round(r.total / tEx * 1000) / 10 : 0;
-      html += '<div class="lrow" style="cursor:default"><span class="dot" style="background:' + catColor('expense', r.name) + '"></span><span class="n">' + esc(r.name) + '</span><span class="p num">' + pct + '%</span><span class="a num">' + fmtYen(r.total) + '</span></div>';
+      html += '<div class="lrow" style="cursor:default"><span class="dot" style="background:' + colors.get(r.name) + '"></span><span class="n">' + esc(r.name) + '</span><span class="p num">' + pct + '%</span><span class="a num">' + fmtYen(r.total) + '</span></div>';
     });
     html += '</div>';
   }
@@ -1501,6 +1526,7 @@ function saveCategory(i) {
 function deleteCategory(i) {
   const cats = catsOf(ui.catType); const c = cats[i];
   const used = db.entries.filter(e => e.type === ui.catType && e.category === c.name).length;
+  if (c.name === 'その他' && used) { toast('「その他」は' + used + '件の明細で使われているため削除できません'); return; }
   if (used) {
     if (!confirm('「' + c.name + '」は' + used + '件の明細で使われています。削除すると、これらの明細は「その他」に変更されます。よろしいですか？')) return;
   } else if (!confirm('「' + c.name + '」を削除しますか？')) return;
@@ -2529,6 +2555,7 @@ function bootAfterLoad() {
   postRecurring();
   postCardPayments();
   showView('input');
+  presetAccount();
   initSync();
 }
 document.addEventListener('DOMContentLoaded', () => {

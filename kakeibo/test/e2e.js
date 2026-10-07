@@ -418,10 +418,41 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await shot(dark, '05-dark-report');
     await dark.click('[data-view=input]'); await shot(dark, '06-dark-input');
 
+    // ── 使い勝手の改善（狭い画面・グラフの色・口座の記憶・検索の合計） ──
+    const ux = await newPage(browser, { viewport: { width: 320, height: 640 } });
+    await ux.evaluate(([ym, pym]) => {
+      const names = ['食費', '日用品', '住居費', '水道光熱費', '通信費', '交通費', '医療費', '教育費', '衣服・美容', '趣味・娯楽', '交際費'];
+      names.forEach((c, i) => { db.entries.push({ id: uid(), date: ym + '-02', type: 'expense', category: c, item: '', amount: 1000 * (i + 1), memo: '', account: '' }); });
+      db.entries.push({ id: uid(), date: pym + '-02', type: 'income', category: '給与', item: '', amount: 1234567, memo: '', account: '' });
+      saveDb(true);
+    }, [thisYm, prevYm]);
+    await ux.click('[data-view=report]'); await wait(100);
+    const uxW = await ux.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: document.documentElement.clientWidth }));
+    check('狭い画面（320px）でも集計が横にはみ出さない', uxW.sw <= uxW.w, JSON.stringify(uxW));
+    const dots = await ux.$$eval('#report-body .legend .lrow .dot', l => l.slice(0, 8).map(d => d.style.background));
+    check('グラフ上位8分類の色が重ならない', dots.length === 8 && new Set(dots).size === 8, dots.join(','));
+    await ux.click('[data-view=input]');
+    await ux.selectOption('#in-account', 'クレジットカード');
+    await ux.fill('#in-amount', '300'); await ux.click('button:has-text("保存する")');
+    await ux.reload(); await ux.waitForSelector('#view-input.active');
+    check('前回の支払方法を覚えている', (await ux.inputValue('#in-account')) === 'クレジットカード');
+    await ux.click('#type-inc');
+    check('収入は別に覚える（未使用なら指定なし）', (await ux.inputValue('#in-account')) === '');
+    await ux.click('[data-view=list]');
+    await ux.fill('#list-q', '交際費');
+    check('検索時の合計は検索結果の合計', (await text(ux, '#list-summary')).includes('¥11,000') && (await text(ux, '#list-body')).includes('検索結果: 1件'));
+    await ux.fill('#list-q', '');
+    await ux.click('[data-view=settings]');
+    await ux.evaluate(() => { db.entries.push({ id: uid(), date: todayStr(), type: 'expense', category: 'その他', item: '', amount: 10, memo: '', account: '' }); saveDb(true); renderSettings(); });
+    await ux.click('#cat-list .cat-item:has-text("その他") >> button[title="削除"]'); await wait(100);
+    check('使用中の「その他」は削除できない', await ux.evaluate(() => catsOf('expense').some(c => c.name === 'その他')));
+    const uxErr = ux.errors.slice();
+    await ux.context().close();
+
     // ── 各画面がエラーなく描画 ──
     for (const v of ['calendar', 'budget', 'list', 'report']) { await page.click('[data-view=' + v + ']'); await wait(60); }
     await page.click('#rep-year'); await wait(60);
-    const errs = [...page.errors, ...pageB.errors, ...dark.errors];
+    const errs = [...page.errors, ...pageB.errors, ...dark.errors, ...uxErr];
     check('JSエラーなし', errs.length === 0, errs.join(' / '));
   } finally {
     await browser.close();
