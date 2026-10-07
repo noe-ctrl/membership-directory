@@ -538,6 +538,15 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.reload();
     const booted = await ux.waitForSelector('#view-input.active', { timeout: 5000 }).then(() => true, () => false);
     check('全種類のデータがある状態で再起動できる（定期収支など）', booted && (await ux.evaluate(() => db.recurring.length === 1 && Object.keys(db.diary).length === 1)), ux.errors.join(' / '));
+    // カレンダーの金額表示（320pxでもマスに収まる・1万以上は100円単位）
+    const calAmt = await ux.evaluate(() => {
+      const ym = currentPeriod(); [9999, 10320, 123456, 1234567].forEach((a, i) => db.entries.push({ id: uid(), date: ym + '-1' + i, type: 'expense', category: '食費', item: 'cal', amount: a, memo: '', account: '' }));
+      showView('calendar');
+      const cut = [...document.querySelectorAll('.cal .ce, .cal .ci')].filter(el => el.scrollWidth > el.clientWidth).map(el => el.textContent);
+      db.entries = db.entries.filter(e => e.item !== 'cal'); saveDb(true);
+      return { f: [9999, 10320, 123456, 1234567].map(fmtCompact).join(' '), cut };
+    });
+    check('カレンダーの金額が細かく表示されマスに収まる', calAmt.f === '9,999 1.03万 12.3万 123万' && calAmt.cut.length === 0, JSON.stringify(calAmt));
     // 日記は入力欄から離れなくても少し待てば保存される
     await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');
     await ux.fill('#diary-text', '入力途中の日記'); await wait(1200);

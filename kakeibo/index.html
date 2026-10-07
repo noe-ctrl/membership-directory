@@ -229,6 +229,7 @@
     .cal .ce, .cal .ci { font-size: 10px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
     .cal .ce { color: var(--expense); } .cal .ci { color: var(--income); }
     @media (min-width: 560px) { .cal .ce, .cal .ci { font-size: 11px; } .cal .cell { min-height: 68px; } }
+    @media (max-width: 359px) { .cal { gap: 2px; } .cal .cell { padding: 3px 1px 2px; } .cal .ce, .cal .ci { font-size: 9px; letter-spacing: -.03em; } }
 
     /* ─── Report ─────────────────────────── */
     .donut-wrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -879,7 +880,13 @@ function ymd(y, m, d) { return y + '-' + pad2(m) + '-' + pad2(d); }
 function daysInMonth(ym) { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); }
 function addMonths(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
 function fmtYen(n) { return (n < 0 ? '-' : '') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP'); }
-function fmtCompact(n) { return n >= 10000 ? (Math.round(n / 1000) / 10).toLocaleString('ja-JP') + '万' : n.toLocaleString('ja-JP'); }
+// カレンダーの狭いマス用: 1万未満はそのまま、10万未満は100円単位（1.03万）、それ以上は1000円単位（12.3万）
+function fmtCompact(n) {
+  if (n < 10000) return n.toLocaleString('ja-JP');
+  const man = n / 10000;
+  const digits = n < 100000 ? 2 : n < 1000000 ? 1 : 0;
+  return Number(man.toFixed(digits)).toLocaleString('ja-JP', { maximumFractionDigits: digits }) + '万';
+}
 function fmtMonth(ym) { const [y, m] = String(ym).split('-'); return Number(y) + '年' + Number(m) + '月'; }
 function fmtDateJa(ds) { const [y, m, d] = ds.split('-').map(Number); const w = '日月火水木金土'[new Date(y, m - 1, d).getDay()]; return m + '月' + d + '日（' + w + '）'; }
 function esc(s) {
@@ -1287,8 +1294,8 @@ function renderCalendar() {
     const mark = (k === 0 || d === 1) && startDay() !== 1 ? '<span class="m">' + Number(ds.slice(5, 7)) + '月</span> ' : '';
     html += '<div class="cell' + (wd === 0 ? ' sun' : wd === 6 ? ' sat' : '') + (ds === today ? ' today' : '') + (ds === ui.selectedDay ? ' sel' : '') + '" data-ds="' + ds + '" onclick="selectDay(\'' + ds + '\')">'
       + '<div class="d">' + mark + d + '<span class="dw">' + diaryMark(ds) + '</span></div>'
-      + (t && t.inc ? '<div class="ci num">+' + fmtCompact(t.inc) + '</div>' : '')
-      + (t && t.ex ? '<div class="ce num">' + fmtCompact(t.ex) + '</div>' : '')
+      + (t && t.inc ? '<div class="ci num" title="収入 ' + fmtYen(t.inc) + '">+' + fmtCompact(t.inc) + '</div>' : '')
+      + (t && t.ex ? '<div class="ce num" title="支出 ' + fmtYen(t.ex) + '">' + fmtCompact(t.ex) + '</div>' : '')
       + '</div>';
   }
   document.getElementById('cal-grid').innerHTML = html;
