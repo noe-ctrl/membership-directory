@@ -270,6 +270,13 @@
     .icon-btn.danger { color: var(--danger); }
     .file-btn { position: relative; overflow: hidden; }
     .file-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+    .set-sec { font-size: 12px; font-weight: 800; color: var(--sub); margin: 18px 4px 8px; letter-spacing: .04em; }
+    .set-sec:first-child { margin-top: 2px; }
+    details.fold > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+    details.fold > summary::-webkit-details-marker { display: none; }
+    details.fold > summary::after { content: "›"; font-size: 20px; color: var(--muted); transform: rotate(90deg); transition: transform .15s; }
+    details.fold[open] > summary { margin-bottom: 10px; }
+    details.fold[open] > summary::after { transform: rotate(-90deg); }
     .note {
       background: var(--card2); border: 1px solid var(--line2); border-radius: 12px;
       padding: 10px 12px; font-size: 12px; line-height: 1.8; color: var(--label);
@@ -504,81 +511,12 @@
 
   <!-- ─── 設定 ─────────────────────────── -->
   <section id="view-settings" class="view">
-    <div class="card">
-      <div class="card-title">うきうき家計簿から移行（CSV取り込み）</div>
-      <div class="note">
-        うきうき家計簿で「CSV出力（エクスポート）」したファイルを選ぶと、列を自動判定して取り込みます。
-        文字コード（Shift_JIS / UTF-8）は自動判定します。うきうき家計簿の「項目」は分類に、「内訳」は項目に、
-        「品名」はメモに、「お店」は店名に入ります。分類や口座は取り込み時に自動で追加され、
-        既に登録済みの同じ内容の行は重複として除外できます。
-      </div>
-      <div class="btn-row">
-        <label class="btn file-btn" style="margin-top:0">CSVファイルを選ぶ<input type="file" accept=".csv,.txt,text/csv,text/plain" onchange="onImportFile(this)"></label>
-      </div>
-      <div id="import-undo"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">スプレッドシート同期（複数端末・バックアップ）</div>
-      <div class="field"><label>同期用URL（GASウェブアプリのURL）</label><input id="set-sync-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setSyncOpt('url', this.value)"></div>
-      <div class="field"><label>同期キー（GASのスクリプト プロパティ SYNC_KEY と同じ文字列）</label><input id="set-sync-key" class="input" type="password" autocomplete="off" onchange="setSyncOpt('key', this.value)"></div>
-      <div class="check"><input type="checkbox" id="set-sync-auto" onchange="setSyncOpt('auto', this.checked)"><label for="set-sync-auto">自動で同期する（入力後・起動時・復帰時）</label></div>
-      <div class="btn-row"><button class="btn secondary sm" onclick="syncNow(false)">今すぐ同期</button></div>
-      <div id="sync-status" class="hint"></div>
-      <div class="hint">Googleスプレッドシートにデータを保存し、複数の端末や家族で同じ家計簿を使えます。セットアップ手順は <code>kakeibo/gas/sync.gs</code> とREADMEを参照してください。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">月の開始日（締め日）</div>
-      <div class="field">
-        <select id="set-startday" class="select" onchange="setStartDay(this.value)"></select>
-      </div>
-      <div class="hint">給料日やカードの締め日に合わせて月の区切りを変えられます。例えば「25日」にすると、9月25日〜10月24日が「9月」として集計されます。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">バックアップ・書き出し</div>
-      <div class="btn-row">
-        <button class="btn secondary sm" onclick="exportJson()">JSONバックアップを保存</button>
-        <button class="btn secondary sm" onclick="exportCsv('all')">全データをCSVで保存</button>
-        <button class="btn secondary sm" onclick="exportCsv('month')">表示中の月をCSVで保存</button>
-        <label class="btn secondary sm file-btn">JSONバックアップを復元<input type="file" accept=".json,application/json" onchange="onRestoreFile(this)"></label>
-      </div>
-      <div class="hint">データはこの端末のブラウザ内（localStorage）にのみ保存されます。機種変更やブラウザのデータ削除に備えて、定期的にJSONバックアップを保存してください。</div>
-    </div>
-
+    <div class="set-sec">よく使う設定</div>
     <div class="card">
       <div class="card-title">口座・支払方法の管理</div>
       <div id="acct-list"></div>
       <div class="btn-row"><button class="btn secondary sm" onclick="openAccount()">＋ 口座を追加</button></div>
       <div class="hint">現金・クレジットカード・銀行口座などを登録すると、入力時に選べるようになり、一覧画面で残高を確認できます。口座間のお金の移動は「振替」で入力します。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">レシート読み取りの設定</div>
-      <div class="field">
-        <label>読み取り方法</label>
-        <select id="set-ocr" class="select" onchange="setOcrMode(this.value)">
-          <option value="browser">ブラウザ内OCR（無料・初回に辞書を自動ダウンロード）</option>
-          <option value="ai">AI読み取り（Google Apps Script 経由・要APIキー）</option>
-        </select>
-      </div>
-      <div class="field" id="set-ocr-url-field" style="display:none">
-        <label>AI読み取り用のURL（GASウェブアプリのURL）</label>
-        <input id="set-ocr-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setOcrUrl(this.value)">
-      </div>
-      <div class="field" id="set-ocr-key-field" style="display:none">
-        <label>AI読み取りの合言葉（GASのスクリプト プロパティ OCR_KEY と同じ文字列）</label>
-        <input id="set-ocr-key" class="input" type="password" autocomplete="off" onchange="setOcrKey(this.value)">
-      </div>
-      <div class="hint">AI読み取りは <code>kakeibo/gas/receipt-ai.gs</code> を Google Apps Script に貼り付けてデプロイし、そのURLを設定します（手順はREADME参照）。精度はAI読み取りの方が高く、品目の分類まで自動で推定します。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">暗証番号ロック</div>
-      <div id="pin-status" class="small" style="margin-bottom:8px"></div>
-      <div class="btn-row" id="pin-btns"></div>
-      <div class="hint">アプリを開いたときと、5分以上バックグラウンドにしたあとに暗証番号を求めます。データは端末内に保存されるため、端末自体のロックも併用してください。</div>
     </div>
 
     <div class="card">
@@ -599,10 +537,83 @@
     </div>
 
     <div class="card">
-      <div class="card-title">データの初期化</div>
+      <div class="card-title">バックアップ・書き出し</div>
+      <div class="btn-row">
+        <button class="btn secondary sm" onclick="exportJson()">JSONバックアップを保存</button>
+        <button class="btn secondary sm" onclick="exportCsv('all')">全データをCSVで保存</button>
+        <button class="btn secondary sm" onclick="exportCsv('month')">表示中の月をCSVで保存</button>
+        <label class="btn secondary sm file-btn">JSONバックアップを復元<input type="file" accept=".json,application/json" onchange="onRestoreFile(this)"></label>
+      </div>
+      <div class="hint">データはこの端末のブラウザ内（localStorage）にのみ保存されます。機種変更やブラウザのデータ削除に備えて、定期的にJSONバックアップを保存してください。</div>
+    </div>
+
+    <div class="set-sec">データの移行・同期</div>
+    <details class="card fold" id="fold-import">
+      <summary class="card-title">うきうき家計簿から移行（CSV取り込み）</summary>
+      <div class="note">
+        うきうき家計簿で「CSV出力（エクスポート）」したファイルを選ぶと、列を自動判定して取り込みます。
+        文字コード（Shift_JIS / UTF-8）は自動判定します。うきうき家計簿の「項目」は分類に、「内訳」は項目に、
+        「品名」はメモに、「お店」は店名に入ります。分類や口座は取り込み時に自動で追加され、
+        既に登録済みの同じ内容の行は重複として除外できます。
+      </div>
+      <div class="btn-row">
+        <label class="btn file-btn" style="margin-top:0">CSVファイルを選ぶ<input type="file" accept=".csv,.txt,text/csv,text/plain" onchange="onImportFile(this)"></label>
+      </div>
+      <div id="import-undo"></div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">スプレッドシート同期（複数端末・バックアップ）</summary>
+      <div class="field"><label>同期用URL（GASウェブアプリのURL）</label><input id="set-sync-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setSyncOpt('url', this.value)"></div>
+      <div class="field"><label>同期キー（GASのスクリプト プロパティ SYNC_KEY と同じ文字列）</label><input id="set-sync-key" class="input" type="password" autocomplete="off" onchange="setSyncOpt('key', this.value)"></div>
+      <div class="check"><input type="checkbox" id="set-sync-auto" onchange="setSyncOpt('auto', this.checked)"><label for="set-sync-auto">自動で同期する（入力後・起動時・復帰時）</label></div>
+      <div class="btn-row"><button class="btn secondary sm" onclick="syncNow(false)">今すぐ同期</button></div>
+      <div id="sync-status" class="hint"></div>
+      <div class="hint">Googleスプレッドシートにデータを保存し、複数の端末や家族で同じ家計簿を使えます。セットアップ手順は <code>kakeibo/gas/sync.gs</code> とREADMEを参照してください。</div>
+    </details>
+
+    <div class="set-sec">その他の設定（タップで開く）</div>
+    <details class="card fold">
+      <summary class="card-title">月の開始日（締め日）</summary>
+      <div class="field">
+        <select id="set-startday" class="select" onchange="setStartDay(this.value)"></select>
+      </div>
+      <div class="hint">給料日やカードの締め日に合わせて月の区切りを変えられます。例えば「25日」にすると、9月25日〜10月24日が「9月」として集計されます。</div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">レシート読み取りの設定</summary>
+      <div class="field">
+        <label>読み取り方法</label>
+        <select id="set-ocr" class="select" onchange="setOcrMode(this.value)">
+          <option value="browser">ブラウザ内OCR（無料・初回に辞書を自動ダウンロード）</option>
+          <option value="ai">AI読み取り（Google Apps Script 経由・要APIキー）</option>
+        </select>
+      </div>
+      <div class="field" id="set-ocr-url-field" style="display:none">
+        <label>AI読み取り用のURL（GASウェブアプリのURL）</label>
+        <input id="set-ocr-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setOcrUrl(this.value)">
+      </div>
+      <div class="field" id="set-ocr-key-field" style="display:none">
+        <label>AI読み取りの合言葉（GASのスクリプト プロパティ OCR_KEY と同じ文字列）</label>
+        <input id="set-ocr-key" class="input" type="password" autocomplete="off" onchange="setOcrKey(this.value)">
+      </div>
+      <div class="hint">AI読み取りは <code>kakeibo/gas/receipt-ai.gs</code> を Google Apps Script に貼り付けてデプロイし、そのURLを設定します（手順はREADME参照）。精度はAI読み取りの方が高く、品目の分類まで自動で推定します。</div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">暗証番号ロック</summary>
+      <div id="pin-status" class="small" style="margin-bottom:8px"></div>
+      <div class="btn-row" id="pin-btns"></div>
+      <div class="hint">アプリを開いたときと、5分以上バックグラウンドにしたあとに暗証番号を求めます。データは端末内に保存されるため、端末自体のロックも併用してください。</div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">データの初期化</summary>
       <div class="btn-row"><button class="btn danger sm" onclick="wipeAll()">すべてのデータを削除</button></div>
       <div class="hint" id="stats-hint"></div>
-    </div>
+    </details>
+
   </section>
 </main>
 
@@ -1584,6 +1595,7 @@ function renderSettings() {
       + (cryptoOk() ? (db.settings.encrypt ? '<button class="btn secondary sm" onclick="openPinModal(\'decrypt\')">暗号化をやめる</button>' : '<button class="btn secondary sm" onclick="openPinModal(\'encrypt\')">データを暗号化する</button>') : '')
     : '<button class="btn secondary sm" onclick="openPinModal(\'set\')">暗証番号を設定</button>';
 
+  if (!db.entries.length) document.getElementById('fold-import').open = true; // 使い始めは移行の欄を開いておく
   const dates = db.entries.map(e => e.date).sort();
   document.getElementById('stats-hint').textContent = db.entries.length
     ? '登録件数: ' + db.entries.length.toLocaleString() + '件（' + dates[0] + ' 〜 ' + dates[dates.length - 1] + '）'

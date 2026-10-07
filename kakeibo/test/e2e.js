@@ -54,6 +54,11 @@ async function newPage(browser, opts) {
   await page.waitForSelector('#view-input.active');
   return page;
 }
+// 設定画面を開き、折りたたまれた枠をすべて展開する
+async function openSettings(pg) {
+  await pg.click('[data-view=settings]');
+  await pg.evaluate(() => document.querySelectorAll('#view-settings details.fold').forEach(d => { d.open = true; }));
+}
 const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(/\s+/g, ' ');
 
 (async () => {
@@ -64,6 +69,14 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
   const [Y, M] = thisYm.split('-').map(Number);
   try {
     const page = await newPage(browser);
+
+    // ── 設定画面: 使い始めは移行欄が開き、その他は折りたたみ ──
+    await page.click('[data-view=settings]');
+    const folds0 = await page.evaluate(() => [...document.querySelectorAll('#view-settings details.fold')].map(d => d.id + ':' + d.open));
+    check('使い始めは移行（CSV取り込み）の欄だけ開いている', folds0[0] === 'fold-import:true' && folds0.slice(1).every(x => x.endsWith(':false')), folds0.join(','));
+    await page.click('#view-settings summary:has-text("暗証番号ロック")');
+    check('折りたたみをタップで開ける', await page.isVisible('#pin-btns button'));
+    await page.click('[data-view=input]');
 
     // ── 基本入力・振替 ──
     await page.fill('#in-amount', '1,234');
@@ -141,7 +154,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const prevDate = prevYm + '-05';
     const cardDate = addMonths(thisYm, -3) + '-20'; // 3か月前の20日 → 2か月前15日締め → 前月10日引き落とし（必ず過去）
     fs.writeFileSync(csvPath, '﻿日付,収支,分類,項目,金額,メモ,支払方法,振替先\n' + prevDate.replace(/-/g, '/') + ',支出,食費,外食,2600,ランチ,現金,\n' + cardDate.replace(/-/g, '/') + ',支出,趣味・娯楽,書籍,3000,,クレジットカード,\n' + prevDate.replace(/-/g, '/') + ',振替,,,7000,,現金,銀行口座\n');
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     let [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=CSVファイルを選ぶ')]);
     await fc.setFiles(csvPath);
     await page.waitForSelector('#modal.open');
@@ -149,7 +162,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('button:has-text("件を取り込む")');
     await page.waitForSelector('#view-list.active');
     check('取り込み後のトーストに取り消し', (await text(page, '#toast')).includes('取り消す'));
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     check('設定に取り消しボタン', (await text(page, '#import-undo')).includes('3件'));
     // 取り消してから再取り込み
     await page.click('#import-undo button');
@@ -188,7 +201,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('.today-btn');
 
     // ── 分類の色 ──
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.click('#cat-list .cat-item >> nth=0 >> button[title="編集"]');
     await page.waitForSelector('#m-cat-colors');
     await page.click('#m-cat-colors .swatch >> nth=7');
@@ -198,7 +211,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // 分類名の変更がお気に入り・予算に追随
     await page.click('[data-view=budget]');
     await page.fill('.brow input >> nth=2', '12000'); await page.press('.brow input >> nth=2', 'Tab'); await wait(100); // 日用品（2番目の分類）
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.click('#cat-list .cat-item >> nth=1 >> button[title="編集"]');
     await page.waitForSelector('#m-cat-name');
     await page.fill('#m-cat-name', '日用雑貨');
@@ -216,7 +229,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const cells = await page.$$eval('.cal .cell:not(.blank)', l => l.length);
     check('カレンダーが期間の日数分', cells >= 28 && cells <= 31, String(cells));
     await shot(page, '03-calendar-startday');
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.selectOption('#set-startday', '1'); await wait(100);
 
     // ── カードの引き落とし自動振替 ──
@@ -234,7 +247,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.reload(); await page.waitForSelector('#view-input.active');
     check('引き落とし振替は二重に作られない', (await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.filter(e => e.autoPay).length)) === 1);
     // 口座名の変更がカードの引き落とし口座に追随
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.click('#acct-list .cat-item:has-text("銀行口座") >> button[title="編集"]');
     await page.waitForSelector('#m-a-name');
     await page.fill('#m-a-name', 'ゆうちょ');
@@ -254,10 +267,10 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     });
     check('年間の分類別合計が年間支出と一致（締め日あり）', yr.ex === yr.sum, JSON.stringify(yr));
     await page.click('#rep-month');
-    await page.click('[data-view=settings]'); await page.selectOption('#set-startday', '1'); await wait(100);
+    await openSettings(page); await page.selectOption('#set-startday', '1'); await wait(100);
 
     // ── 暗証番号ロック ──
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.click('text=暗証番号を設定');
     await page.fill('#m-p-new', '1234'); await page.fill('#m-p-new2', '1234');
     await page.click('#modal-box button:has-text("保存する")'); await wait(100);
@@ -267,7 +280,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.fill('#lock-pin', '1234'); await page.press('#lock-pin', 'Enter'); await wait(100);
     check('暗証番号で解除', !(await page.isVisible('#lock')));
     // ── 暗号化 ──
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.click('text=データを暗号化する');
     await page.fill('#m-p-cur', '1234'); await page.fill('#m-p-confirm', '暗号化');
     await page.click('#modal-box button:has-text("暗号化する")'); await wait(1500);
@@ -292,10 +305,10 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.evaluate(() => { db.entries = db.entries.filter(e => !String(e.item).startsWith('大量データ')); saveDb(true); });
     await wait(800);
     // 同期スナップショットも平文では残らない
-    await page.click('[data-view=settings]'); await page.click('text=今すぐ同期'); await wait(800);
+    await openSettings(page); await page.click('text=今すぐ同期'); await wait(800);
     const snapRaw = await page.evaluate(() => localStorage.getItem('kakeibo.syncsnap.v1') || '');
     check('暗号化中は同期スナップショットも暗号化', snapRaw === '' || (snapRaw.includes('"enc":1') && !snapRaw.includes('トイレットペーパー')), snapRaw.slice(0, 40));
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.click('text=暗号化をやめる');
     await page.fill('#m-p-cur', '1234'); await page.click('#modal-box button:has-text("暗号化をやめる")'); await wait(300);
     const rawPlain = await page.evaluate(() => localStorage.getItem('kakeibo.v1'));
@@ -312,7 +325,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const countA = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.length);
 
     const pageB = await newPage(browser);
-    await pageB.click('[data-view=settings]');
+    await openSettings(pageB);
     await pageB.fill('#set-sync-key', 'testkey'); await pageB.press('#set-sync-key', 'Tab');
     await pageB.fill('#set-sync-url', syncUrl); await pageB.press('#set-sync-url', 'Tab');
     await wait(800);
@@ -324,7 +337,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await pageB.fill('#in-amount', '777'); await pageB.fill('#in-memo', '端末Bから');
     await pageB.click('button:has-text("保存する")');
     await wait(4800); // 自動同期（4秒デバウンス）
-    await page.click('[data-view=settings]'); await page.click('text=今すぐ同期'); await wait(600);
+    await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
     const hasB = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.some(e => e.memo === '端末Bから'));
     check('端末Aが端末Bの追加を受信', hasB);
     // A で削除 → B で反映
@@ -333,12 +346,12 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.waitForSelector('#modal.open');
     await page.click('button:has-text("この明細を削除")');
     await wait(4800);
-    await pageB.click('[data-view=settings]'); await pageB.click('text=今すぐ同期'); await wait(600);
+    await openSettings(pageB); await pageB.click('text=今すぐ同期'); await wait(600);
     const stillB = await pageB.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.some(e => e.memo === '端末Bから'));
     check('端末Bで削除が反映', !stillB);
     // 同じ明細を両端末で編集 → 先に同期した方が勝つ
     const targetId = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.find(e => e.memo === 'テスト').id);
-    const editMemo = async (pg, memo) => { await pg.evaluate(([id, m]) => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); d.entries.find(e => e.id === id).memo = m; localStorage.setItem('kakeibo.v1', JSON.stringify(d)); }, [targetId, memo]); await pg.reload(); await pg.waitForSelector('#view-input.active'); await pg.click('[data-view=settings]'); };
+    const editMemo = async (pg, memo) => { await pg.evaluate(([id, m]) => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); d.entries.find(e => e.id === id).memo = m; localStorage.setItem('kakeibo.v1', JSON.stringify(d)); }, [targetId, memo]); await pg.reload(); await pg.waitForSelector('#view-input.active'); await openSettings(pg); };
     await editMemo(page, 'A編集'); await editMemo(pageB, 'B編集');
     await page.click('text=今すぐ同期'); await wait(600);
     await pageB.click('text=今すぐ同期'); await wait(600);
@@ -347,11 +360,11 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // 設定はセクション単位でマージ: A が予算、B がお気に入りを別々に変更しても両方残る
     await page.click('[data-view=budget]');
     await page.fill('.brow input >> nth=0', '333000'); await page.press('.brow input >> nth=0', 'Tab'); await wait(100);
-    await page.click('[data-view=settings]'); await page.click('text=今すぐ同期'); await wait(600);
+    await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
     await pageB.click('[data-view=input]');
     await pageB.fill('#in-amount', '120'); await pageB.fill('#in-item', 'ガム');
     await pageB.click('#fav-add-btn'); await wait(100);
-    await pageB.click('[data-view=settings]'); await pageB.click('text=今すぐ同期'); await wait(600);
+    await openSettings(pageB); await pageB.click('text=今すぐ同期'); await wait(600);
     const mergedB = await pageB.evaluate(ym => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); return { total: d.budgets.overrides[ym] ? d.budgets.overrides[ym].total : d.budgets.total, fav: d.favorites.some(f => f.item === 'ガム') }; }, thisYm);
     await page.click('text=今すぐ同期'); await wait(600);
     const mergedA = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).favorites.some(f => f.item === 'ガム'));
@@ -361,13 +374,13 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('[data-view=calendar]'); await page.click('#cal-grid .cell.today');
     await page.click('.diary .chip >> nth=1');
     await page.fill('#diary-text', '同期テストの日記'); await page.press('#diary-text', 'Tab'); await wait(100);
-    await page.click('[data-view=settings]'); await page.click('text=今すぐ同期'); await wait(600);
+    await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
     await pageB.click('text=今すぐ同期'); await wait(600);
     const diaryB = await pageB.evaluate(d => JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d], today);
     check('日記が他の端末に同期される', diaryB && diaryB.w === 'cloud' && diaryB.t === '同期テストの日記', JSON.stringify(diaryB));
     await pageB.click('[data-view=calendar]'); await pageB.click('#cal-grid .cell.today');
     await pageB.click('.diary .chip.on'); await pageB.fill('#diary-text', ''); await pageB.press('#diary-text', 'Tab'); await wait(100);
-    await pageB.click('[data-view=settings]'); await pageB.click('text=今すぐ同期'); await wait(600);
+    await openSettings(pageB); await pageB.click('text=今すぐ同期'); await wait(600);
     await page.click('text=今すぐ同期'); await wait(600);
     const diaryA = await page.evaluate(d => JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d], today);
     check('日記の削除が他の端末に反映される', diaryA === undefined, JSON.stringify(diaryA));
@@ -382,14 +395,14 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
       recurring: [{ category: 'x', amount: 1, day: '<img src=x onerror="window.__xss=1">', startMonth: '<img src=x onerror="window.__xss=1">-01' }],
       categories: { expense: [{ name: '食費" onload="window.__xss=1" x="' }] }
     }));
-    await evil.click('[data-view=settings]');
+    await openSettings(evil);
     const [fcE] = await Promise.all([evil.waitForEvent('filechooser'), evil.click('text=JSONバックアップを復元')]);
     await fcE.setFiles(evilBackup);
     await wait(300);
     await evil.click('[data-view=report]');
     await evil.selectOption('#report-body select', { index: 1 }); await wait(100);
     await evil.click('[data-view=list]'); await evil.click('#view-list .entry >> nth=0'); await wait(100); await evil.click('.modal-close');
-    await evil.click('[data-view=settings]'); await wait(100);
+    await openSettings(evil); await wait(100);
     const xss = await evil.evaluate(() => window.__xss);
     const recTxt = await text(evil, '#rec-list');
     check('改ざんデータでスクリプトが実行されない', xss === 0 && recTxt.includes('毎月1日') && evil.errors.length === 0, 'xss=' + xss + ' ' + evil.errors.join('/'));
@@ -398,7 +411,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // ── AI読み取り（擬似GAS経由）と合言葉 ──
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
     const pngPath = path.join(TMP, 'receipt.png'); fs.writeFileSync(pngPath, png);
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.selectOption('#set-ocr', 'ai'); await wait(100);
     await page.fill('#set-ocr-url', 'http://127.0.0.1:' + SYNC_PORT + '/ocr'); await page.press('#set-ocr-url', 'Tab');
     await page.fill('#set-ocr-key', 'wrongkey'); await page.press('#set-ocr-key', 'Tab');
@@ -409,7 +422,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await fcR.setFiles(pngPath); await wait(800);
     check('AI読み取り: 合言葉が違うと拒否', (await text(page, '#ocr-status')).includes('合言葉'), await text(page, '#ocr-status'));
     await page.click('.modal-close');
-    await page.click('[data-view=settings]');
+    await openSettings(page);
     await page.fill('#set-ocr-key', 'ocrkey'); await page.press('#set-ocr-key', 'Tab');
     await page.click('[data-view=input]');
     await page.click('button:has-text("レシートをまとめて入力")');
@@ -421,7 +434,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const rcTotal = await page.inputValue('#rc-total');
     check('AI読み取り: 結果が明細に反映', rcStore === 'モックスーパー' && rcItems.join(',') === 'キャベツ,牛乳' && rcTotal === '406', rcStore + '|' + rcItems + '|' + rcTotal);
     await page.click('.modal-close');
-    await page.click('[data-view=settings]'); await page.selectOption('#set-ocr', 'browser'); await wait(100);
+    await openSettings(page); await page.selectOption('#set-ocr', 'browser'); await wait(100);
 
     // ── ダークモード ──
     const dark = await newPage(browser, { colorScheme: 'dark' });
@@ -456,7 +469,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.fill('#list-q', '交際費');
     check('検索時の合計は検索結果の合計', (await text(ux, '#list-summary')).includes('¥11,000') && (await text(ux, '#list-body')).includes('検索結果: 1件'));
     await ux.fill('#list-q', '');
-    await ux.click('[data-view=settings]');
+    await openSettings(ux);
     await ux.evaluate(() => { db.entries.push({ id: uid(), date: todayStr(), type: 'expense', category: 'その他', item: '', amount: 10, memo: '', account: '' }); saveDb(true); renderSettings(); });
     await ux.click('#cat-list .cat-item:has-text("その他") >> button[title="削除"]'); await wait(100);
     check('使用中の「その他」は削除できない', await ux.evaluate(() => catsOf('expense').some(c => c.name === 'その他')));
@@ -485,7 +498,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.click('[data-view=calendar]');
     check('カレンダーに天気を表示', (await text(ux, '#cal-grid .cell.today')).includes('☀️'));
     // うきうき家計簿形式のCSV（Shift_JIS・日付/項目/内訳/品名/お店/収入/支出/口座/メモ）
-    await ux.click('[data-view=settings]');
+    await openSettings(ux);
     const [fcU] = await Promise.all([ux.waitForEvent('filechooser'), ux.click('text=CSVファイルを選ぶ')]);
     await fcU.setFiles(path.join(__dirname, 'fixtures', 'ukiuki-sample.csv'));
     await ux.waitForSelector('#modal.open');
@@ -499,7 +512,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('うきうき形式: 引用符・カンマ入りの品名とメモ', book && book.memo === '家計簿の本, 第2版 / メモに "引用符" あり' && book.account === '楽天カード', JSON.stringify(book));
     check('うきうき形式: 収入列は収入として取り込み・口座を自動登録', pay && pay.type === 'income' && pay.category === '給料' && pay.memo === '4月分' && (await ux.evaluate(() => db.accounts.some(a => a.name === 'ゆうちょ銀行') && db.accounts.some(a => a.name === '楽天カード'))), JSON.stringify(pay));
     check('うきうき形式: 合計が一致', uk.length === 8 && uk.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0) === 2580 + 198 + 438 + 1650 + 85000 + 3300, String(uk.length));
-    await ux.click('[data-view=settings]');
+    await openSettings(ux);
     const [fcU2] = await Promise.all([ux.waitForEvent('filechooser'), ux.click('text=CSVファイルを選ぶ')]);
     await fcU2.setFiles(path.join(__dirname, 'fixtures', 'ukiuki-sample.csv'));
     await ux.waitForSelector('#modal.open');
@@ -507,7 +520,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.click('.modal-close');
 
     // 起動時の読み込み: 全種類のデータ（定期収支・カード・予算の上書き・お気に入り・日記）がある状態で開き直しても起動できる
-    await ux.click('[data-view=settings]');
+    await openSettings(ux);
     await ux.click('text=＋ 定期収支を追加'); await ux.waitForSelector('#m-r-amount');
     await ux.fill('#m-r-amount', '80000'); await ux.fill('#m-r-item', '家賃');
     await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
