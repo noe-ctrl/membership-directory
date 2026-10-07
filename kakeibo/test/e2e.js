@@ -178,9 +178,9 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('.today-btn');
     await page.fill('#list-q', 'ランチ');
     check('月内検索は空', (await text(page, '#list-body')).includes('該当する明細がありません'));
-    await page.check('#list-all');
+    await page.click('#filter-btn'); await page.selectOption('#f-period', 'all');
     check('全期間検索', (await text(page, '#list-body')).includes('全期間の検索結果: 1件'));
-    await page.uncheck('#list-all'); await page.fill('#list-q', '');
+    await page.selectOption('#f-period', 'month'); await page.click('#filter-btn'); await page.fill('#list-q', '');
 
     // ── 集計: 前月比・推移 ──
     await page.click('[data-view=report]');
@@ -469,6 +469,25 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.fill('#list-q', '交際費');
     check('検索時の合計は検索結果の合計', (await text(ux, '#list-summary')).includes('¥11,000') && (await text(ux, '#list-body')).includes('検索結果: 1件'));
     await ux.fill('#list-q', '');
+    // 絞り込み: 金額範囲・分類・種別・日付指定・クリア・CSV保存
+    await ux.click('#filter-btn');
+    await ux.fill('#f-min', '5000'); await ux.fill('#f-max', '9000');
+    const fAmt = await ux.$$eval('#list-body .entry .amt', l => l.map(x => x.textContent));
+    check('絞り込み: 金額の範囲', fAmt.slice().sort().join(',') === '-¥5,000,-¥6,000,-¥7,000,-¥8,000,-¥9,000' && (await text(ux, '#filter-btn')).includes('（1）'), fAmt.join(','));
+    await ux.fill('#f-min', ''); await ux.fill('#f-max', '');
+    await ux.selectOption('#f-cat', '交際費');
+    check('絞り込み: 分類', (await ux.$$eval('#list-body .entry', l => l.length)) === 1 && (await text(ux, '#list-summary')).includes('¥11,000'));
+    await ux.selectOption('#f-cat', ''); await ux.selectOption('#f-type', 'income'); await ux.selectOption('#f-period', 'all');
+    check('絞り込み: 種別＋全期間（前月の収入も出る）', (await text(ux, '#list-body')).includes('全期間の検索結果: 1件') && (await text(ux, '#list-summary')).includes('¥1,234,567'));
+    await ux.selectOption('#f-period', 'range'); await ux.fill('#f-from', prevYm + '-01'); await ux.fill('#f-to', prevYm + '-28');
+    await ux.dispatchEvent('#f-to', 'change');
+    check('絞り込み: 日付を指定', (await text(ux, '#list-body')).includes('検索結果: 1件') && (await text(ux, '#list-body')).includes('〜'));
+    const [dl] = await Promise.all([ux.waitForEvent('download'), ux.click('text=この結果をCSVで保存')]);
+    const dlTxt = fs.readFileSync(await dl.path(), 'utf8');
+    check('絞り込み結果のCSV保存', dl.suggestedFilename() === 'kakeibo_search.csv' && dlTxt.split('\r\n').length === 2 && dlTxt.includes('1234567'), dlTxt.slice(0, 120));
+    await ux.click('text=条件をクリア');
+    check('絞り込みのクリア', (await text(ux, '#filter-btn')) === '絞り込み' && !(await text(ux, '#list-body')).includes('検索結果'));
+    await ux.click('#filter-btn');
     await openSettings(ux);
     await ux.evaluate(() => { db.entries.push({ id: uid(), date: todayStr(), type: 'expense', category: 'その他', item: '', amount: 10, memo: '', account: '' }); saveDb(true); renderSettings(); });
     await ux.click('#cat-list .cat-item:has-text("その他") >> button[title="削除"]'); await wait(100);

@@ -350,6 +350,7 @@
     .lock .input { text-align: center; font-size: 24px; letter-spacing: .3em; margin-top: 12px; }
     .search-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
     .search-row .input { flex: 1; }
+    #filter-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
     .search-row label { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: var(--sub); }
 
     /* ─── Toast ──────────────────────────── */
@@ -483,8 +484,9 @@
     <div class="summary" id="list-summary"></div>
     <div class="search-row">
       <input id="list-q" class="input" type="search" placeholder="分類・項目・メモ・店名で検索" oninput="renderList()">
-      <label><input type="checkbox" id="list-all" onchange="renderList()">全期間</label>
+      <button class="btn secondary sm" id="filter-btn" onclick="toggleFilter()">絞り込み</button>
     </div>
+    <div class="card" id="filter-panel" style="display:none"></div>
     <div id="list-body"></div>
   </section>
 
@@ -1250,21 +1252,61 @@ function summaryTiles(list, prev) {
 }
 
 /* ─── 一覧 ───────────────────────────── */
+/* ─── 一覧の絞り込み（期間・種別・分類・口座・金額） ─── */
+const FILTER0 = { period: 'month', from: '', to: '', type: '', category: '', account: '', min: '', max: '' };
+ui.filter = Object.assign({}, FILTER0);
+function filterCount() {
+  const f = ui.filter;
+  return (f.period !== 'month' ? 1 : 0) + ['type', 'category', 'account'].filter(k => f[k]).length + ((f.min !== '' || f.max !== '') ? 1 : 0);
+}
+function toggleFilter() { ui.filterOpen = !ui.filterOpen; renderFilterPanel(); }
+function setFilter(k, v) { ui.filter[k] = v; if (k === 'period') renderFilterPanel(); else updateFilterBtn(); renderList(); }
+function clearFilter() { ui.filter = Object.assign({}, FILTER0); document.getElementById('list-q').value = ''; renderFilterPanel(); renderList(); }
+function updateFilterBtn() { const n = filterCount(); const b = document.getElementById('filter-btn'); b.textContent = '絞り込み' + (n ? '（' + n + '）' : ''); b.classList.toggle('on', n > 0); }
+function renderFilterPanel() {
+  const el = document.getElementById('filter-panel'), f = ui.filter;
+  updateFilterBtn();
+  el.style.display = ui.filterOpen ? '' : 'none';
+  if (!ui.filterOpen) return;
+  const opt = (v, l, cur) => '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>';
+  const catOpts = '<optgroup label="支出">' + catsOf('expense').map(c => opt(c.name, c.name, f.category)).join('') + '</optgroup><optgroup label="収入">' + catsOf('income').filter(c => !catsOf('expense').some(x => x.name === c.name)).map(c => opt(c.name, c.name, f.category)).join('') + '</optgroup>';
+  el.innerHTML = '<div class="row2"><div class="field"><label>期間</label><select id="f-period" class="select" onchange="setFilter(\'period\', this.value)">' + opt('month', '表示中の月', f.period) + opt('all', '全期間', f.period) + opt('range', '日付を指定', f.period) + '</select></div>'
+    + '<div class="field"><label>種別</label><select id="f-type" class="select" onchange="setFilter(\'type\', this.value)">' + opt('', 'すべて', f.type) + opt('expense', '支出', f.type) + opt('income', '収入', f.type) + opt('transfer', '振替', f.type) + '</select></div></div>'
+    + (f.period === 'range' ? '<div class="row2"><div class="field"><label>開始日</label><input id="f-from" class="input" type="date" value="' + esc(f.from) + '" onchange="setFilter(\'from\', this.value)"></div><div class="field"><label>終了日</label><input id="f-to" class="input" type="date" value="' + esc(f.to) + '" onchange="setFilter(\'to\', this.value)"></div></div>' : '')
+    + '<div class="row2"><div class="field"><label>分類</label><select id="f-cat" class="select" onchange="setFilter(\'category\', this.value)">' + opt('', 'すべて', f.category) + catOpts + '</select></div>'
+    + '<div class="field"><label>支払方法・口座</label><select id="f-acc" class="select" onchange="setFilter(\'account\', this.value)">' + opt('', 'すべて', f.account) + db.accounts.map(a => opt(a.name, a.name, f.account)).join('') + '</select></div></div>'
+    + '<div class="row2"><div class="field"><label>金額（以上）</label><input id="f-min" class="input num" type="text" inputmode="numeric" placeholder="下限なし" value="' + esc(f.min) + '" oninput="setFilter(\'min\', this.value)"></div>'
+    + '<div class="field"><label>金額（以下）</label><input id="f-max" class="input num" type="text" inputmode="numeric" placeholder="上限なし" value="' + esc(f.max) + '" oninput="setFilter(\'max\', this.value)"></div></div>'
+    + '<div class="btn-row"><button class="btn secondary sm" onclick="clearFilter()">条件をクリア</button><button class="btn secondary sm" onclick="exportFiltered()">この結果をCSVで保存</button><button class="btn secondary sm" onclick="toggleFilter()">閉じる</button></div>';
+}
+// 検索語と絞り込み条件に合う明細と、対象期間の説明を返す
+function filteredEntries() {
+  const f = ui.filter;
+  const q = (document.getElementById('list-q').value || '').trim().toLowerCase();
+  let base, scope;
+  if (f.period === 'range') { base = db.entries.filter(e => (!f.from || e.date >= f.from) && (!f.to || e.date <= f.to)); scope = (f.from ? fmtDateJa(f.from) : '最初') + '〜' + (f.to ? fmtDateJa(f.to) : '最新'); }
+  else if (f.period === 'all') { base = db.entries; scope = '全期間'; }
+  else { base = entriesInMonth(ui.month); scope = fmtMonth(ui.month); }
+  const min = f.min === '' ? null : calcAmount(f.min), max = f.max === '' ? null : calcAmount(f.max);
+  const list = base.filter(e => (!q || entrySearchText(e).includes(q)) && (!f.type || e.type === f.type)
+    && (!f.category || (e.type !== 'transfer' && e.category === f.category)) && (!f.account || e.account === f.account || e.toAccount === f.account)
+    && (min == null || e.amount >= min) && (max == null || e.amount <= max));
+  return { list, scope, active: !!q || filterCount() > 0 };
+}
+function exportFiltered() { const r = filteredEntries(); exportEntriesCsv(r.list, 'kakeibo_search'); }
 function renderList() {
   document.getElementById('acct-card').innerHTML = accountCardHtml();
-  const q = (document.getElementById('list-q').value || '').trim().toLowerCase();
-  const allPeriod = document.getElementById('list-all').checked && q;
-  const base = allPeriod ? db.entries : entriesInMonth(ui.month);
-  const list = q ? base.filter(e => entrySearchText(e).includes(q)) : base;
+  updateFilterBtn();
+  const { list, scope, active } = filteredEntries();
   document.getElementById('list-summary').innerHTML = summaryTiles(list);
   let note = '';
   let shown = list;
-  if (q) {
-    note = '<div class="small" style="margin-bottom:6px">' + (allPeriod ? '全期間' : fmtMonth(ui.month)) + 'の検索結果: ' + list.length.toLocaleString() + '件（上の合計は検索結果の合計）' + (list.length > 300 ? '・新しい300件を表示' : '') + '</div>';
+  if (active) {
+    note = '<div class="small" style="margin-bottom:6px">' + esc(scope) + 'の検索結果: ' + list.length.toLocaleString() + '件（上の合計は検索結果の合計）' + (list.length > 300 ? '・新しい300件を表示' : '') + '</div>';
     if (list.length > 300) shown = sortEntries(list).slice(0, 300);
   }
   document.getElementById('list-body').innerHTML = note + (shown.length ? groupedByDay(shown)
-    : '<div class="empty">' + (q ? '該当する明細がありません' : 'この月の入力はありません') + '</div>');
+    : '<div class="empty">' + (active ? '該当する明細がありません' : 'この月の入力はありません') + '</div>');
 }
 function accountCardHtml() {
   if (!db.accounts.length) return '';
@@ -2128,12 +2170,15 @@ function downloadFile(name, content, mime) {
 }
 function csvCell(v) { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 function exportCsv(scope) {
-  const list = sortEntries(scope === 'month' ? entriesInMonth(ui.month) : db.entries).reverse();
+  exportEntriesCsv(scope === 'month' ? entriesInMonth(ui.month) : db.entries, 'kakeibo_' + (scope === 'month' ? ui.month : 'all'));
+}
+function exportEntriesCsv(entries, base) {
+  const list = sortEntries(entries).reverse();
   if (!list.length) { toast('書き出すデータがありません'); return; }
   const lines = [['日付', '収支', '分類', '項目', '金額', 'メモ', '支払方法', '振替先', '店名']];
   list.forEach(e => lines.push([e.date.replace(/-/g, '/'), typeLabel(e.type), e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '']));
   const csv = '﻿' + lines.map(r => r.map(csvCell).join(',')).join('\r\n');
-  downloadFile('kakeibo_' + (scope === 'month' ? ui.month : 'all') + '.csv', csv, 'text/csv;charset=utf-8');
+  downloadFile(base + '.csv', csv, 'text/csv;charset=utf-8');
 }
 function exportJson() {
   downloadFile('kakeibo_backup_' + todayStr() + '.json', JSON.stringify(Object.assign({ exportedAt: new Date().toISOString() }, db), null, 1), 'application/json');
