@@ -508,7 +508,8 @@
       <div class="card-title">うきうき家計簿から移行（CSV取り込み）</div>
       <div class="note">
         うきうき家計簿で「CSV出力（エクスポート）」したファイルを選ぶと、列を自動判定して取り込みます。
-        文字コード（Shift_JIS / UTF-8）は自動判定します。分類や項目は取り込み時に自動で追加され、
+        文字コード（Shift_JIS / UTF-8）は自動判定します。うきうき家計簿の「項目」は分類に、「内訳」は項目に、
+        「品名」はメモに、「お店」は店名に入ります。分類や口座は取り込み時に自動で追加され、
         既に登録済みの同じ内容の行は重複として除外できます。
       </div>
       <div class="btn-row">
@@ -1901,11 +1902,16 @@ const COL_RULES = {
   memo:     [/^メモ$|^備考$/, /メモ|備考|コメント|note|memo|remark/i],
   account:  [/^口座$|^支払方法$|^支払い方法$/, /口座|支払|決済|account|payment|wallet|財布/i],
   toAccount: [/^振替先$/, /振替先|入金口座|移動先|to_?account/i],
-  store:    [/^店名$|^店舗$/, /店名|店舗|お店|shop|store/i]
+  store:    [/^店名$|^店舗$|^お店$/, /店名|店舗|お店|shop|store/i],
+  product:  [/^品名$|^商品名$/, /品名|商品名/]
 };
 function guessColumns(header) {
   const map = {}; const used = new Set();
   const h = header.map(x => toHalfWidth(String(x)).trim());
+  // うきうき家計簿形式（日付・項目・内訳・品名・お店・収入・支出・口座・メモ）:
+  // うきうきの「項目」（食費など）→ 分類、「内訳」（お米など）→ 項目、「品名」→ メモの先頭に追加
+  const ki = h.indexOf('項目'), ui = h.indexOf('内訳');
+  if (ki >= 0 && ui >= 0 && !h.some(x => /^(大)?分類$|^カテゴリ$/.test(x))) { map.category = ki; map.item = ui; used.add(ki); used.add(ui); }
   for (let pass = 0; pass < 2; pass++) {
     for (const key in COL_RULES) {
       if (map[key] != null) continue;
@@ -1997,7 +2003,9 @@ function buildImportEntries() {
     let category = col(r, 'category'), item = col(r, 'item');
     if (!category && item) { category = item; item = ''; }
     if (!category) category = 'その他';
-    const entry = { date, type, category, item, amount, memo: col(r, 'memo'), account: col(r, 'account') };
+    const product = col(r, 'product'), memo0 = col(r, 'memo');
+    const memo = product && product !== item ? (memo0 ? product + ' / ' + memo0 : product) : memo0;
+    const entry = { date, type, category, item, amount, memo, account: col(r, 'account') };
     if (type === 'transfer') { entry.category = '振替'; entry.item = ''; entry.toAccount = col(r, 'toAccount') || item; }
     const store = col(r, 'store'); if (store) entry.store = store;
     out.push(entry);
@@ -2023,7 +2031,7 @@ function renderImportModal() {
     + '<div><label>1行目</label><select class="select" onchange="setImportOpt(\'hasHeader\', this.value === \'1\')"><option value="1"' + (s.hasHeader ? ' selected' : '') + '>見出し行</option><option value="0"' + (!s.hasHeader ? ' selected' : '') + '>データ行</option></select></div>'
     + '</div>';
   html += '<div class="card-title" style="margin-top:6px">列の割り当て</div><div class="map-grid">'
-    + colSel('date', '日付') + colSel('category', '分類') + colSel('item', '項目') + colSel('memo', 'メモ') + colSel('account', '支払方法・口座') + colSel('store', '店名')
+    + colSel('date', '日付') + colSel('category', '分類') + colSel('item', '項目') + colSel('memo', 'メモ') + colSel('product', '品名（メモに追加）') + colSel('account', '支払方法・口座') + colSel('store', '店名')
     + '<div><label>収支の判定</label><select class="select" onchange="setImportOpt(\'typeMode\', this.value)">'
     + [['column', '「収支」列で判定'], ['twocol', '収入列・支出列で判定'], ['category', '分類名から判定'], ['sign', '金額の符号（マイナス=支出）'], ['signrev', '金額の符号（マイナス=収入）'], ['expense', 'すべて支出'], ['income', 'すべて収入']]
       .map(([v, l]) => '<option value="' + v + '"' + (tm === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>'
@@ -2033,6 +2041,8 @@ function renderImportModal() {
   html += '<div class="card-title" style="margin-top:14px">プレビュー <span class="small">先頭5件</span></div><div class="preview"><table><tr><th>日付</th><th>収支</th><th>分類</th><th>項目</th><th>金額</th><th>メモ</th></tr>'
     + (preview.length ? preview.map(e => '<tr><td>' + e.date + '</td><td class="' + (e.type === 'income' ? 'inc' : e.type === 'transfer' ? '' : 'exp') + '">' + typeLabel(e.type) + '</td><td>' + esc(e.category) + '</td><td>' + esc(e.item) + '</td><td class="num">' + fmtYen(e.amount) + '</td><td>' + esc(e.memo) + '</td></tr>').join('')
       : '<tr><td colspan="6" class="bad">読み取れる行がありません。列の割り当てを確認してください。</td></tr>') + '</table></div>';
+  const trLike = built.entries.filter(e => e.type !== 'transfer' && /振替|口座移動|資金移動|チャージ/.test(e.category + ' ' + e.item)).length;
+  if (trLike) html += '<div class="hint">「振替」などの名前の行が' + trLike + '件あります。このファイルには振替先の列がないため、収入・支出として取り込まれます。取り込み後に明細を開いて種別を「振替」に変更できます。</div>';
   if (built.bad.length) html += '<div class="hint exp">読み取れない行: ' + built.bad.length + '件（例: ' + built.bad[0].line + '行目 ' + built.bad[0].reason + '）— これらは取り込まれません</div>';
   html += '<div class="check"><input type="checkbox" id="imp-dup"' + (s.skipDup ? ' checked' : '') + ' onchange="setImportOpt(\'skipDup\', this.checked)"><label for="imp-dup">登録済みと同じ内容の行はスキップ' + (dups ? '（' + dups + '件）' : '') + '</label></div>';
   html += '<button class="btn" onclick="runImport()"' + (willImport ? '' : ' disabled') + '>' + willImport.toLocaleString() + '件を取り込む</button>';

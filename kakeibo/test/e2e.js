@@ -484,6 +484,28 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('日記と天気を保存', dsaved && dsaved.w === 'sun' && dsaved.t === '日記のテスト', JSON.stringify(dsaved));
     await ux.click('[data-view=calendar]');
     check('カレンダーに天気を表示', (await text(ux, '#cal-grid .cell.today')).includes('☀️'));
+    // うきうき家計簿形式のCSV（Shift_JIS・日付/項目/内訳/品名/お店/収入/支出/口座/メモ）
+    await ux.click('[data-view=settings]');
+    const [fcU] = await Promise.all([ux.waitForEvent('filechooser'), ux.click('text=CSVファイルを選ぶ')]);
+    await fcU.setFiles(path.join(__dirname, 'fixtures', 'ukiuki-sample.csv'));
+    await ux.waitForSelector('#modal.open');
+    const impTxt = await text(ux, '#modal-box');
+    check('うきうき形式: 8件を認識（Shift_JIS）', impTxt.includes('8件を取り込む') && impTxt.includes('収入列・支出列') && !impTxt.includes('読み取れない行'), impTxt.slice(0, 200));
+    await ux.click('button:has-text("件を取り込む")'); await ux.waitForSelector('#view-list.active');
+    const uk = await ux.evaluate(() => db.entries.filter(e => e.date.startsWith('2025-0')).sort((a, b) => (a.date + a.amount < b.date + b.amount ? -1 : 1)));
+    const rice = uk.find(e => e.amount === 2580), book = uk.find(e => e.amount === 1650), pay = uk.find(e => e.amount === 280000);
+    check('うきうき形式: 項目→分類・内訳→項目・品名→メモ・お店→店名',
+      rice && rice.category === '食費' && rice.item === 'お米' && rice.memo === 'コシヒカリ5kg' && rice.store === '○○スーパー' && rice.account === '現金' && rice.type === 'expense', JSON.stringify(rice));
+    check('うきうき形式: 引用符・カンマ入りの品名とメモ', book && book.memo === '家計簿の本, 第2版 / メモに "引用符" あり' && book.account === '楽天カード', JSON.stringify(book));
+    check('うきうき形式: 収入列は収入として取り込み・口座を自動登録', pay && pay.type === 'income' && pay.category === '給料' && pay.memo === '4月分' && (await ux.evaluate(() => db.accounts.some(a => a.name === 'ゆうちょ銀行') && db.accounts.some(a => a.name === '楽天カード'))), JSON.stringify(pay));
+    check('うきうき形式: 合計が一致', uk.length === 8 && uk.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0) === 2580 + 198 + 438 + 1650 + 85000 + 3300, String(uk.length));
+    await ux.click('[data-view=settings]');
+    const [fcU2] = await Promise.all([ux.waitForEvent('filechooser'), ux.click('text=CSVファイルを選ぶ')]);
+    await fcU2.setFiles(path.join(__dirname, 'fixtures', 'ukiuki-sample.csv'));
+    await ux.waitForSelector('#modal.open');
+    check('うきうき形式: 同じファイルの再取り込みは重複スキップ', (await text(ux, '#modal-box')).includes('スキップ（8件）') && (await ux.isDisabled('button:has-text("件を取り込む")')));
+    await ux.click('.modal-close');
+
     // 起動時の読み込み: 全種類のデータ（定期収支・カード・予算の上書き・お気に入り・日記）がある状態で開き直しても起動できる
     await ux.click('[data-view=settings]');
     await ux.click('text=＋ 定期収支を追加'); await ux.waitForSelector('#m-r-amount');
