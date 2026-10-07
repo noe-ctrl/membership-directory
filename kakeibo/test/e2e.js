@@ -357,6 +357,20 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const mergedA = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).favorites.some(f => f.item === 'ガム'));
     check('設定のセクション別マージ（Bに予算が届きお気に入りも残る）', mergedB.total === 333000 && mergedB.fav, JSON.stringify(mergedB));
     check('設定のセクション別マージ（AにBのお気に入りが届く）', mergedA);
+    // 日記（天気・本文）の同期と削除の反映
+    await page.click('[data-view=calendar]'); await page.click('#cal-grid .cell.today');
+    await page.click('.diary .chip >> nth=1');
+    await page.fill('#diary-text', '同期テストの日記'); await page.press('#diary-text', 'Tab'); await wait(100);
+    await page.click('[data-view=settings]'); await page.click('text=今すぐ同期'); await wait(600);
+    await pageB.click('text=今すぐ同期'); await wait(600);
+    const diaryB = await pageB.evaluate(d => JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d], today);
+    check('日記が他の端末に同期される', diaryB && diaryB.w === 'cloud' && diaryB.t === '同期テストの日記', JSON.stringify(diaryB));
+    await pageB.click('[data-view=calendar]'); await pageB.click('#cal-grid .cell.today');
+    await pageB.click('.diary .chip.on'); await pageB.fill('#diary-text', ''); await pageB.press('#diary-text', 'Tab'); await wait(100);
+    await pageB.click('[data-view=settings]'); await pageB.click('text=今すぐ同期'); await wait(600);
+    await page.click('text=今すぐ同期'); await wait(600);
+    const diaryA = await page.evaluate(d => JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d], today);
+    check('日記の削除が他の端末に反映される', diaryA === undefined, JSON.stringify(diaryA));
     await shot(page, '04-settings');
 
     // ── 改ざんされたバックアップ・分類名からスクリプトが実行されない ──
@@ -446,6 +460,44 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.evaluate(() => { db.entries.push({ id: uid(), date: todayStr(), type: 'expense', category: 'その他', item: '', amount: 10, memo: '', account: '' }); saveDb(true); renderSettings(); });
     await ux.click('#cat-list .cat-item:has-text("その他") >> button[title="削除"]'); await wait(100);
     check('使用中の「その他」は削除できない', await ux.evaluate(() => catsOf('expense').some(c => c.name === 'その他')));
+    // 電卓入力・計算式
+    await ux.click('[data-view=input]');
+    await ux.click('.calc-btn');
+    for (const k of ['1', '2', '8', '0', '+', '3', '5', '0', '×', '2']) await ux.click('#calc-keys button[data-k="' + k + '"]');
+    check('電卓の計算結果（掛け算を先に計算）', (await text(ux, '#calc-rs')).includes('¥1,980'));
+    await ux.click('#calc-keys button[data-k="確定"]');
+    check('電卓の確定で金額欄に入る', (await ux.inputValue('#in-amount')) === '1980' && !(await ux.isVisible('#calc')));
+    await ux.fill('#in-amount', '１０００÷３'); await ux.click('button:has-text("保存する")'); await wait(100);
+    const calcSaved = await ux.evaluate(() => db.entries[db.entries.length - 1].amount);
+    check('計算式を直接入力して保存（全角も可）', calcSaved === 333, String(calcSaved));
+    await ux.fill('#in-amount', '100+'); await ux.click('button:has-text("保存する")'); await wait(100);
+    check('不完全な計算式は保存しない', (await ux.evaluate(() => db.entries[db.entries.length - 1].amount)) === 333 && (await text(ux, '#toast')).includes('金額'));
+    // カレンダー: 週ごとの収支・日記
+    await ux.click('[data-view=calendar]');
+    const weeksTxt = await text(ux, '#cal-weeks');
+    check('週ごとの収支を表示', weeksTxt.includes('週ごとの収支') && weeksTxt.includes('第1週'));
+    await ux.click('#cal-grid .cell.today');
+    await ux.click('.diary .chip >> nth=0');
+    await ux.fill('#diary-text', '日記のテスト'); await ux.press('#diary-text', 'Tab'); await wait(100);
+    await ux.reload(); await ux.waitForSelector('#view-input.active');
+    const dsaved = await ux.evaluate(d => JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d], today);
+    check('日記と天気を保存', dsaved && dsaved.w === 'sun' && dsaved.t === '日記のテスト', JSON.stringify(dsaved));
+    await ux.click('[data-view=calendar]');
+    check('カレンダーに天気を表示', (await text(ux, '#cal-grid .cell.today')).includes('☀️'));
+    // 起動時の読み込み: 全種類のデータ（定期収支・カード・予算の上書き・お気に入り・日記）がある状態で開き直しても起動できる
+    await ux.click('[data-view=settings]');
+    await ux.click('text=＋ 定期収支を追加'); await ux.waitForSelector('#m-r-amount');
+    await ux.fill('#m-r-amount', '80000'); await ux.fill('#m-r-item', '家賃');
+    await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
+    await ux.evaluate(ym => {
+      db.accounts.push({ id: uid(), name: 'テストカード', initial: 0, card: true, closingDay: 15, payDay: 10, payOffset: 1, payAccount: '銀行口座', payFrom: ym });
+      db.budgets.overrides[ym] = { total: 1000, categories: { '食費': 500 } };
+      db.favorites.push({ id: uid(), name: 'お気に入り', type: 'expense', category: '食費', item: '', amount: 100, memo: '', account: '' });
+      saveDb(true);
+    }, thisYm);
+    await ux.reload();
+    const booted = await ux.waitForSelector('#view-input.active', { timeout: 5000 }).then(() => true, () => false);
+    check('全種類のデータがある状態で再起動できる（定期収支など）', booted && (await ux.evaluate(() => db.recurring.length === 1 && Object.keys(db.diary).length === 1)), ux.errors.join(' / '));
     const uxErr = ux.errors.slice();
     await ux.context().close();
 
