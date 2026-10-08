@@ -370,6 +370,13 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const mergedA = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).favorites.some(f => f.item === 'ガム'));
     check('設定のセクション別マージ（Bに予算が届きお気に入りも残る）', mergedB.total === 333000 && mergedB.fav, JSON.stringify(mergedB));
     check('設定のセクション別マージ（AにBのお気に入りが届く）', mergedA);
+    // 使った人とメンバー一覧の同期（sync.gs の新しい列）
+    await page.evaluate(() => { db.members = ['自分', '夫']; const e = db.entries.find(x => x.memo === 'A編集'); e.person = '夫'; saveDb(true); });
+    await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
+    await openSettings(pageB); await pageB.click('text=今すぐ同期'); await wait(600);
+    const pB = await pageB.evaluate(() => ({ m: db.members.join(','), p: (db.entries.find(x => x.memo === 'A編集') || {}).person, v: db.settings.sync.serverVersion }));
+    check('使った人とメンバー一覧が同期される', pB.m === '自分,夫' && pB.p === '夫' && pB.v === 2, JSON.stringify(pB));
+
     // 日記（天気・本文）の同期と削除の反映
     await page.click('[data-view=calendar]'); await page.click('#cal-grid .cell.today');
     await page.click('.diary .chip >> nth=1');
@@ -385,6 +392,30 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const diaryA = await page.evaluate(d => JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d], today);
     check('日記の削除が他の端末に反映される', diaryA === undefined, JSON.stringify(diaryA));
     await shot(page, '04-settings');
+
+    // ── 古い sync.gs（使った人の列なし）からの貼り替え ──
+    const oldGas = await mock.start(8767, { syncFile: path.join(__dirname, 'fixtures', 'sync-v1.gs') });
+    const pc = await newPage(browser);
+    await pc.evaluate(() => { db.members = ['自分', '妻']; db.entries.push({ id: 'pv1', date: todayStr(), type: 'expense', category: '食費', item: '', amount: 999, memo: '貼り替えテスト', account: '', person: '妻' }); saveDb(true); });
+    await openSettings(pc);
+    await pc.fill('#set-sync-key', 'testkey'); await pc.press('#set-sync-key', 'Tab');
+    await pc.fill('#set-sync-url', 'http://127.0.0.1:8767/exec'); await pc.press('#set-sync-url', 'Tab'); await wait(800);
+    check('古いsync.gsでも同期でき、貼り替えの案内が出る', (await text(pc, '#sync-status')).includes('最終同期') && (await text(pc, '#sync-status')).includes('sync.gs'), await text(pc, '#sync-status'));
+    const newGas = await mock.start(8768, { env: oldGas.env }); // 同じスプレッドシートのまま新しい版に貼り替え
+    await pc.fill('#set-sync-url', 'http://127.0.0.1:8768/exec'); await pc.press('#set-sync-url', 'Tab'); await wait(800);
+    await pc.click('text=今すぐ同期'); await wait(800);
+    const sheet = Object.values(oldGas.env.spreadsheets)[0].getSheetByName('entries');
+    const hdr = sheet.rows[0], row = sheet.rows.find(r => r[0] === 'pv1');
+    check('貼り替え後に見出し行へ「person」列を追加', hdr[hdr.length - 1] === 'person', hdr.join(','));
+    check('貼り替え後に使った人を送り直す', row && row[hdr.indexOf('person')] === '妻' && !(await text(pc, '#sync-status')).includes('sync.gs'), JSON.stringify(row));
+    const pd = await newPage(browser);
+    await openSettings(pd);
+    await pd.fill('#set-sync-key', 'testkey'); await pd.press('#set-sync-key', 'Tab');
+    await pd.fill('#set-sync-url', 'http://127.0.0.1:8768/exec'); await pd.press('#set-sync-url', 'Tab'); await wait(800);
+    check('貼り替え後は別の端末にも使った人とメンバーが届く', await pd.evaluate(() => db.members.join(',') === '自分,妻' && (db.entries.find(e => e.id === 'pv1') || {}).person === '妻'));
+    const compatErr = [...pc.errors, ...pd.errors];
+    await pc.context().close(); await pd.context().close(); oldGas.server.close(); newGas.server.close();
+    check('貼り替えテストでJSエラーなし', compatErr.length === 0, compatErr.join(' / '));
 
     // ── 改ざんされたバックアップ・分類名からスクリプトが実行されない ──
     const evil = await newPage(browser);
@@ -579,6 +610,34 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.click('#rep-year'); await ux.click('text=この年を印刷・PDF');
     check('年の印刷: 月別の収支を含む', (await ux.evaluate(() => document.getElementById('print-area').textContent)).includes('月別の収支'));
     await ux.click('#rep-month');
+    // 使った人: 登録・入力・前回の人を記憶・人別集計・絞り込み・名前変更・CSV
+    await openSettings(ux);
+    await ux.evaluate(() => { window.__names = ['自分', '妻']; window.prompt = () => window.__names.shift() || ''; });
+    await ux.click('text=＋ 使った人を追加'); await ux.click('text=＋ 使った人を追加');
+    check('使った人を登録', (await text(ux, '#member-list')).includes('自分') && (await text(ux, '#member-list')).includes('妻'));
+    await ux.click('[data-view=input]'); await ux.click('#type-exp');
+    check('入力画面に使った人の選択が出る', await ux.isVisible('#in-personfield'));
+    await ux.click('#in-persons .chip:has-text("妻")');
+    await ux.fill('#in-amount', '4321'); await ux.click('#save-btn'); await wait(100);
+    check('使った人を付けて保存', (await ux.evaluate(() => db.entries[db.entries.length - 1].person)) === '妻');
+    await ux.reload(); await ux.waitForSelector('#view-input.active');
+    check('前回の使った人を覚えている', (await text(ux, '#in-persons .chip.on')).includes('妻'));
+    await ux.click('[data-view=report]'); await ux.click('#rep-month');
+    check('集計に使った人別の支出', (await text(ux, '#person-card')).includes('妻') && (await text(ux, '#person-card')).includes('¥4,321') && (await text(ux, '#person-card')).includes('（指定なし）'));
+    await ux.click('[data-view=list]'); await ux.click('#filter-btn'); await ux.selectOption('#f-person', '妻');
+    check('使った人で絞り込み', (await ux.$$eval('#list-body .entry', l => l.length)) === 1 && (await text(ux, '#list-body')).includes('👤妻'));
+    const [dlp] = await Promise.all([ux.waitForEvent('download'), ux.click('text=この結果をCSVで保存')]);
+    const dlpTxt = fs.readFileSync(await dlp.path(), 'utf8');
+    check('CSVに使った人の列', dlpTxt.split('\r\n')[0].endsWith('使った人') && dlpTxt.includes(',妻'), dlpTxt.slice(0, 120));
+    await ux.click('text=条件をクリア'); await ux.click('#filter-btn');
+    await openSettings(ux);
+    await ux.evaluate(() => { window.prompt = () => 'パートナー'; });
+    await ux.click('#member-list .cat-item:has-text("妻") >> button[title="名前を変更"]'); await wait(100);
+    check('使った人の名前変更が明細に反映', (await ux.evaluate(() => db.entries.filter(e => e.person === 'パートナー').length)) === 1 && !(await ux.evaluate(() => db.entries.some(e => e.person === '妻'))));
+    await ux.click('[data-view=list]'); await ux.click('#list-body .entry:has-text("パートナー")'); await ux.waitForSelector('#m-e-person');
+    await ux.selectOption('#m-e-person', '自分'); await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
+    check('編集で使った人を変更', (await ux.evaluate(() => db.entries.filter(e => e.person === '自分').length)) === 1);
+
     // 日記は入力欄から離れなくても少し待てば保存される
     await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');
     await ux.fill('#diary-text', '入力途中の日記'); await wait(1200);
