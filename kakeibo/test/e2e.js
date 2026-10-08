@@ -663,10 +663,51 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const uxErr = ux.errors.slice();
     await ux.context().close();
 
+    // ── 救出画面: 起動に失敗してもデータを書き出せる ──
+    const broken = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
+    const bp = await broken.newPage();
+    await bp.route('**/index.html', async route => {
+      const res = await route.fetch(); let body = await res.text();
+      body = body.replace('/* ════════════════════════════════════════════════════════════\n   家計簿', 'throw new Error("起動テスト用のエラー");\n/* ════════════════════════════════════════════════════════════\n   家計簿');
+      await route.fulfill({ response: res, body });
+    });
+    await bp.addInitScript(() => { if (!localStorage.getItem('kakeibo.v1')) localStorage.setItem('kakeibo.v1', JSON.stringify({ entries: [{ id: 'r1', date: '2026-01-05', type: 'expense', category: '食費', amount: 777, memo: '救出テスト' }] })); });
+    await bp.goto('http://127.0.0.1:' + PORT + '/index.html');
+    const rescued = await bp.waitForSelector('#rescue', { timeout: 5000 }).then(() => true, () => false);
+    check('起動に失敗すると救出画面を表示', rescued && (await text(bp, '#rescue')).includes('起動テスト用のエラー'));
+    const [rdl] = await Promise.all([bp.waitForEvent('download'), bp.click('#rescue-save')]);
+    const rescuePath = path.join(TMP, 'rescue.json'); await rdl.saveAs(rescuePath);
+    check('救出画面からデータを保存', JSON.parse(fs.readFileSync(rescuePath, 'utf8')).entries[0].memo === '救出テスト');
+    await broken.close();
+    const rp = await newPage(browser);
+    await openSettings(rp);
+    const [fcRes] = await Promise.all([rp.waitForEvent('filechooser'), rp.click('text=JSONバックアップを復元')]);
+    await fcRes.setFiles(rescuePath); await wait(300);
+    check('救出したファイルを復元できる', await rp.evaluate(() => db.entries.some(e => e.memo === '救出テスト')));
+    check('正常に起動したときは救出画面を出さない', !(await rp.$('#rescue')));
+    // 暗号化された端末の救出ファイルは暗証番号で復号して復元
+    const encPath = path.join(TMP, 'rescue-enc.json');
+    const env = await rp.evaluate(async () => { const salt = b64.enc(crypto.getRandomValues(new Uint8Array(16))); return encryptJson(JSON.stringify({ entries: [{ id: 'r2', date: '2026-01-06', type: 'expense', category: '食費', amount: 888, memo: '暗号化救出' }] }), await deriveKey('2468', salt), salt); });
+    fs.writeFileSync(encPath, JSON.stringify(env));
+    await rp.evaluate(() => { window.prompt = () => '2468'; });
+    const [fcEnc] = await Promise.all([rp.waitForEvent('filechooser'), rp.click('text=JSONバックアップを復元')]);
+    await fcEnc.setFiles(encPath); await wait(1500);
+    check('暗号化された救出ファイルを暗証番号で復元', await rp.evaluate(() => db.entries.some(e => e.memo === '暗号化救出')));
+    // 保存容量の表示と、上限に近いときの警告
+    await openSettings(rp);
+    check('保存容量の使用量を表示', /保存容量: 約\d+KB使用/.test(await text(rp, '#storage-usage')), await text(rp, '#storage-usage'));
+    await rp.evaluate(() => { localStorage.setItem('kakeibo.testfill', 'x'.repeat(1900000)); renderSettings(); });
+    const fullTxt = await text(rp, '#storage-usage');
+    await rp.click('[data-view=input]');
+    const fullNote = await text(rp, '#backup-note');
+    await rp.evaluate(() => localStorage.removeItem('kakeibo.testfill'));
+    check('保存容量が上限に近いと警告', fullTxt.includes('上限に近づいています') && fullNote.includes('保存容量が上限の'), fullTxt + ' | ' + fullNote);
+    const rpErr = rp.errors.slice(); await rp.context().close();
+
     // ── 各画面がエラーなく描画 ──
     for (const v of ['calendar', 'budget', 'list', 'report']) { await page.click('[data-view=' + v + ']'); await wait(60); }
     await page.click('#rep-year'); await wait(60);
-    const errs = [...page.errors, ...pageB.errors, ...dark.errors, ...uxErr];
+    const errs = [...page.errors, ...pageB.errors, ...dark.errors, ...uxErr, ...rpErr];
     check('JSエラーなし', errs.length === 0, errs.join(' / '));
   } finally {
     await browser.close();

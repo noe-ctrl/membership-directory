@@ -581,6 +581,7 @@
         <label class="btn secondary sm file-btn">JSONバックアップを復元<input type="file" accept=".json,application/json" onchange="onRestoreFile(this)"></label>
       </div>
       <div class="hint">データはこの端末のブラウザ内（localStorage）にのみ保存されます。機種変更やブラウザのデータ削除に備えて、定期的にJSONバックアップを保存してください。</div>
+      <div class="hint" id="storage-usage"></div>
     </div>
 
     <div class="set-sec">データの移行・同期</div>
@@ -693,6 +694,46 @@
   </div>
 </div>
 
+<script>
+/* ─── 救出画面 ─────────────────────────────────────────────
+   本体のスクリプトで起動中にエラーが起きると画面が表示されなくなるため、
+   本体とは独立したこの小さなスクリプトで、端末内のデータをそのまま書き出せるようにする。
+   本体は起動の最後に window.__kakeiboBooted = true を立てる。 */
+(function () {
+  var errors = [];
+  window.addEventListener('error', function (e) { errors.push(String(e.message || e.error || 'error') + (e.lineno ? '（' + e.lineno + '行目）' : '')); });
+  window.addEventListener('load', function () { setTimeout(function () { if (!window.__kakeiboBooted) showRescue(); }, 1500); });
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function save() {
+    var raw = null;
+    try { raw = localStorage.getItem('kakeibo.v1'); } catch (e) {}
+    if (!raw) { alert('この端末に保存されたデータが見つかりませんでした'); return; }
+    var d = new Date(), a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+    a.download = 'kakeibo_rescue_' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '.json';
+    document.body.appendChild(a); a.click();
+  }
+  function showRescue() {
+    if (document.getElementById('rescue')) return;
+    var raw = null; try { raw = localStorage.getItem('kakeibo.v1'); } catch (e) {}
+    var enc = !!(raw && raw.indexOf('"enc":1') >= 0);
+    var box = document.createElement('div');
+    box.id = 'rescue';
+    box.setAttribute('style', 'position:fixed;inset:0;z-index:999;background:#f6f4ef;color:#222;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif');
+    box.innerHTML = '<div style="max-width:420px;width:100%;background:#fff;border:1px solid #e7e1d7;border-radius:18px;padding:22px 18px;line-height:1.7">'
+      + '<div style="font-size:19px;font-weight:800;margin-bottom:8px">家計簿を開けませんでした</div>'
+      + '<div style="font-size:14px">起動中にエラーが起きました。<b>データはこの端末に残っています。</b>まず下のボタンでデータを保存してください。'
+      + (raw ? '（約' + Math.max(1, Math.round(raw.length / 1024)) + 'KB）' : '（保存されたデータは見つかりません）')
+      + (enc ? '<br>データは暗号化されています。保存したファイルは、直った版で暗証番号を入れると読めるようになります。' : '<br>保存したファイルは、直った版の「設定 → JSONバックアップを復元」で読み込めます。') + '</div>'
+      + '<button id="rescue-save" style="width:100%;margin-top:14px;padding:14px;border:none;border-radius:14px;background:#4f46e5;color:#fff;font-size:15px;font-weight:700">データを保存する</button>'
+      + '<button id="rescue-reload" style="width:100%;margin-top:8px;padding:12px;border:1px solid #e7e1d7;border-radius:14px;background:#fff;font-size:14px;font-weight:700">再読み込みする</button>'
+      + '<div style="font-size:11px;color:#6b6b6b;margin-top:12px;word-break:break-all">エラーの内容: ' + (errors.join(' / ').replace(/</g, '&lt;') || '不明') + '</div></div>';
+    document.body.appendChild(box);
+    document.getElementById('rescue-save').onclick = save;
+    document.getElementById('rescue-reload').onclick = function () { location.reload(); };
+  }
+})();
+</script>
 <script>
 /* ════════════════════════════════════════════════════════════
    家計簿  — データはブラウザの localStorage に保存（サーバー不要）
@@ -1853,6 +1894,7 @@ function renderSettings() {
     : '<button class="btn secondary sm" onclick="openPinModal(\'set\')">暗証番号を設定</button>';
 
   if (!db.entries.length) document.getElementById('fold-import').open = true; // 使い始めは移行の欄を開いておく
+  renderStorageUsage();
   document.getElementById('member-list').innerHTML = db.members.map((m, i) => '<div class="cat-item"><div class="n">👤 ' + esc(m) + ' <span class="small">（' + db.entries.filter(e => e.person === m).length + '件）</span></div>'
     + '<button class="icon-btn" title="名前を変更" onclick="renameMember(' + i + ')">✎</button><button class="icon-btn danger" title="削除" onclick="deleteMember(' + i + ')">×</button></div>').join('') || '<div class="small">登録されていません</div>';
   const dates = db.entries.map(e => e.date).sort();
@@ -2407,21 +2449,47 @@ function exportJson() {
   downloadFile('kakeibo_backup_' + todayStr() + '.json', JSON.stringify(Object.assign({ exportedAt: new Date().toISOString() }, db), null, 1), 'application/json');
   db.settings.lastBackupAt = Date.now(); saveDb(true); renderBackupNote();
 }
+// 保存容量の使用量（文字数×2バイトで多めに見積もる。ブラウザの上限は約5MB）
+const STORAGE_LIMIT = 5 * 1024 * 1024;
+function storageUsage() {
+  let n = 0;
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kakeibo')) n += (k.length + (localStorage.getItem(k) || '').length) * 2; } } catch (e) {}
+  return { bytes: n, ratio: n / STORAGE_LIMIT };
+}
+function fmtBytes(n) { return n >= 1024 * 1024 ? (Math.round(n / 1024 / 1024 * 10) / 10) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+function renderStorageUsage() {
+  const el = document.getElementById('storage-usage'); if (!el) return;
+  const u = storageUsage(), pct = Math.round(u.ratio * 100);
+  el.innerHTML = '保存容量: 約' + fmtBytes(u.bytes) + '使用（ブラウザの上限 約5MB の ' + pct + '%）'
+    + (u.ratio >= 0.7 ? '<br><span class="exp">上限に近づいています。JSONバックアップを保存し、スプレッドシート同期の設定をおすすめします。上限を超えると新しい入力が保存できなくなります。</span>' : '');
+}
 function renderBackupNote() {
   const el = document.getElementById('backup-note'); if (!el) return;
   const DAY = 86400000;
   const last = db.settings.lastBackupAt || 0;
   const oldest = db.entries.length ? Math.min(...db.entries.map(e => new Date(e.date).getTime())) : Date.now();
   const need = db.entries.length >= 20 && !syncConfigured() && (last ? Date.now() - last > 30 * DAY : Date.now() - oldest > 30 * DAY);
-  el.innerHTML = need ? '<div class="note" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span>' + (last ? '最後のバックアップから30日以上経っています。' : 'バックアップがまだ保存されていません。') + 'データはこの端末のブラウザ内にだけあります。</span><button class="btn secondary sm" onclick="exportJson()">保存</button></div>' : '';
+  const full = storageUsage().ratio >= 0.7;
+  el.innerHTML = need || full ? '<div class="note" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span>'
+    + (full ? '<span class="exp">保存容量が上限の' + Math.round(storageUsage().ratio * 100) + '%に達しています。</span>' : '')
+    + (need ? (last ? '最後のバックアップから30日以上経っています。' : 'バックアップがまだ保存されていません。') + 'データはこの端末のブラウザ内にだけあります。' : 'バックアップを保存してください。')
+    + '</span><button class="btn secondary sm" onclick="exportJson()">保存</button></div>' : '';
 }
 function onRestoreFile(input) {
   const file = input.files && input.files[0]; input.value = '';
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     let data;
     try { data = JSON.parse(reader.result); } catch (e) { alert('JSONファイルとして読み込めませんでした'); return; }
+    // 暗号化された端末から救出画面で保存したファイル: 暗証番号で復号してから読み込む
+    if (isEnvelope(data)) {
+      if (!cryptoOk()) { alert('このブラウザ（またはhttp接続）では暗号化されたファイルを読めません。httpsで開いてください'); return; }
+      const pin = prompt('このファイルは暗号化されています。暗号化したときの暗証番号を入力してください');
+      if (!pin) return;
+      try { data = await decryptJson(data, await deriveKey(pin, data.salt)); }
+      catch (e) { alert('暗証番号が違うか、ファイルが壊れています'); return; }
+    }
     if (!data || !Array.isArray(data.entries)) { alert('家計簿のバックアップファイルではないようです'); return; }
     const n = data.entries.length;
     const mode = db.entries.length
@@ -3059,6 +3127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showView('input');
   } else bootAfterLoad();
   initLock();
+  window.__kakeiboBooted = true; // 救出画面を出さない合図（ここまで来れば起動成功）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
