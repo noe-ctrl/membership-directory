@@ -808,6 +808,7 @@ function normalizeDb(data) {
     recurring: Array.isArray(d.recurring) ? d.recurring.map(sanitizeRule).filter(Boolean) : [],
     diary: sanitizeDiary(d.diary),
     members: sanitizeMembers(d.members),
+    goals: Array.isArray(d.goals) ? d.goals.map(sanitizeGoal).filter(Boolean).slice(0, 30) : [],
     accounts: Array.isArray(d.accounts) ? d.accounts.filter(a => a && a.name).map(a => {
       const o = { id: safeId(a.id), name: String(a.name), initial: Math.round(num0(a.initial)) };
       if (a.card) { o.card = true; o.closingDay = Math.min(31, Math.max(1, Math.round(num0(a.closingDay)) || 15)); o.payDay = Math.min(31, Math.max(1, Math.round(num0(a.payDay)) || 10)); o.payOffset = a.payOffset === 2 ? 2 : 1; o.payAccount = String(a.payAccount || ''); o.payFrom = /^\d{4}-\d{2}$/.test(String(a.payFrom || '')) ? a.payFrom : ''; }
@@ -859,6 +860,13 @@ function sanitizeDiary(d) {
   const out = {};
   if (d && typeof d === 'object') for (const k in d) { if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue; const v = sanitizeDiaryDay(d[k]); if (v) out[k] = v; }
   return out;
+}
+// 貯金目標: 口座と連動するなら口座残高、しなければ手入力の「今の額」で進み具合を見る
+function sanitizeGoal(g) {
+  if (!g || typeof g !== 'object') return null;
+  const target = Math.round(num0(g.target)); const name = String(g.name || '').trim().slice(0, 40);
+  if (!(target > 0) || !name) return null;
+  return { id: safeId(g.id), name, target, deadline: YM_RE.test(String(g.deadline || '')) ? String(g.deadline) : '', account: String(g.account || ''), saved: Math.round(num0(g.saved)) };
 }
 // 使った人（家族のメンバー）の名前一覧
 function sanitizeMembers(m) { return Array.isArray(m) ? [...new Set(m.map(x => String(x == null ? '' : x).trim().slice(0, 20)).filter(Boolean))].slice(0, 20) : []; }
@@ -1009,6 +1017,7 @@ function renameEverywhere(kind, oldName, newName) {
     db.recurring.forEach(r => { if (r.account === oldName) r.account = newName || ''; if (r.toAccount === oldName) r.toAccount = newName || ''; });
     db.favorites.forEach(f => { if (f.account === oldName) f.account = newName || ''; });
     db.accounts.forEach(a => { if (a.card && a.payAccount === oldName) a.payAccount = newName || ''; });
+    db.goals.forEach(g => { if (g.account === oldName) g.account = newName || ''; });
   } else {
     const type = kind;
     const to = newName || 'その他';
@@ -1694,10 +1703,63 @@ function renderBudget() {
   let html = '<div class="card"><div class="card-title"><span>月の予算合計</span><span class="small">' + (ov ? 'この月のみ' : '毎月共通') + '</span></div>';
   html += budgetRow('__total', '支出合計', b.total, totalSpent, true);
   html += '<div class="check" style="margin-bottom:0"><input type="checkbox" id="budget-ov"' + (ov ? ' checked' : '') + ' onchange="toggleBudgetOverride(this.checked)"><label for="budget-ov">' + fmtMonth(ui.month) + 'だけ別の予算にする</label></div>';
-  html += '</div><div class="card"><div class="card-title">分類ごとの予算<span class="small">' + (ov ? 'この月のみ' : '毎月共通') + '</span></div>';
+  html += '</div>' + goalsCardHtml();
+  html += '<div class="card"><div class="card-title">分類ごとの予算<span class="small">' + (ov ? 'この月のみ' : '毎月共通') + '</span></div>';
   catsOf('expense').forEach(c => { html += budgetRow(c.name, c.name, b.categories[c.name] || 0, spent[c.name] || 0, false); });
   html += '<div class="hint">金額を入力すると自動で保存されます。空欄は予算なしです。' + (ov ? 'この月の予算は毎月共通の予算とは別に保存されます。' : '') + '</div></div>';
   document.getElementById('budget-body').innerHTML = html;
+}
+/* ─── 貯金目標 ───────────────────────── */
+function monthsBetween(a, b) { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); }
+function goalCurrent(g) { return g.account ? accountBalance(g.account) : g.saved; }
+function avgSurplus(n) {
+  let sum = 0; for (let i = 1; i <= n; i++) { const l = entriesInMonth(addMonths(currentPeriod(), -i)); sum += sumBy(l, 'income') - sumBy(l, 'expense'); }
+  return Math.round(sum / n);
+}
+function goalsCardHtml() {
+  let html = '<div class="card" id="goals-card"><div class="card-title"><span>貯金目標</span><button class="btn secondary sm" onclick="openGoal()">＋ 目標を追加</button></div>';
+  if (!db.goals.length) return html + '<div class="small">旅行・車・教育費など、目標額と期限を決めると、毎月いくら貯めればよいかを表示します。</div></div>';
+  const cur = currentPeriod(); let need = 0;
+  db.goals.forEach(g => {
+    const now = goalCurrent(g), remain = Math.max(0, g.target - now), ratio = Math.min(1, Math.max(0, now / g.target));
+    let pace = '';
+    if (remain <= 0) pace = '<span class="inc">🎉 達成しました</span>';
+    else if (g.deadline) {
+      const left = monthsBetween(cur, g.deadline) + 1;
+      if (left > 0) need += Math.ceil(remain / left);
+      pace = left > 0 ? fmtMonth(g.deadline) + 'まで残り' + left + 'か月 · 毎月 <b>' + fmtYen(Math.ceil(remain / left)) + '</b>' : '<span class="exp">期限（' + fmtMonth(g.deadline) + '）を過ぎています</span>';
+    } else pace = 'あと ' + fmtYen(remain);
+    html += '<div class="brow" onclick="openGoal(\'' + g.id + '\')" style="cursor:pointer"><div class="top"><span class="n">' + esc(g.name) + '</span><span class="num small">' + fmtYen(now) + ' / ' + fmtYen(g.target) + '</span></div>'
+      + '<div class="bar"><i class="' + (ratio >= 1 ? 'ok' : 'warn') + '" style="width:' + (ratio * 100) + '%"></i></div>'
+      + '<div class="sub"><span>' + Math.round(ratio * 100) + '%' + (g.account ? ' · ' + esc(g.account) + 'の残高' : '') + '</span><span class="num">' + pace + '</span></div></div>';
+  });
+  const avg = avgSurplus(3);
+  return html + '<div class="hint">' + (need ? '期限のある目標の合計で毎月 <b class="num">' + fmtYen(need) + '</b> が必要です（' + (avg >= need ? '<span class="inc">今のペースで間に合います</span>' : '<span class="exp">今のペースでは ' + fmtYen(need - Math.max(0, avg)) + '/月 足りません</span>') + '）。<br>' : '')
+    + '参考: 過去3か月の平均の月収支は <span class="num ' + (avg < 0 ? 'exp' : 'inc') + '">' + fmtYen(avg) + '</span> です。目標をタップすると編集できます。</div></div>';
+}
+function openGoal(id) {
+  const g = id ? db.goals.find(x => x.id === id) : { name: '', target: 0, deadline: '', account: '', saved: 0 };
+  if (!g) return;
+  openModal(id ? '貯金目標を編集' : '貯金目標を追加',
+    '<div class="field"><label>目標の名前</label><input id="m-g-name" class="input" value="' + esc(g.name) + '" placeholder="例: 家族旅行・車の買い替え"></div>'
+    + '<div class="row2"><div class="field"><label>目標額（円）</label><input id="m-g-target" class="input num" type="text" inputmode="numeric" value="' + (g.target ? g.target.toLocaleString() : '') + '"></div>'
+    + '<div class="field"><label>期限（任意）</label><input id="m-g-deadline" class="input" type="month" value="' + esc(g.deadline) + '"></div></div>'
+    + '<div class="field"><label>貯める口座（任意）</label><select id="m-g-account" class="select" onchange="document.getElementById(\'m-g-savedblock\').style.display = this.value ? \'none\' : \'\'"><option value="">（口座と連動しない）</option>' + db.accounts.map(a => '<option value="' + esc(a.name) + '"' + (a.name === g.account ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '</select></div>'
+    + '<div class="field" id="m-g-savedblock"' + (g.account ? ' style="display:none"' : '') + '><label>今貯まっている額（円）</label><input id="m-g-saved" class="input num" type="text" inputmode="numeric" value="' + (g.saved ? g.saved.toLocaleString() : '') + '"></div>'
+    + '<div class="hint">口座を選ぶと、その口座の残高を貯まった額として自動で使います（貯金用の口座へは「振替」で入金を記録します）。口座と連動しない場合は、今貯まっている額を手で更新してください。</div>'
+    + '<button class="btn" onclick="saveGoal(' + (id ? '\'' + id + '\'' : 'null') + ')">保存する</button>'
+    + (id ? '<button class="btn danger" onclick="deleteGoal(\'' + id + '\')">この目標を削除</button>' : ''));
+}
+function saveGoal(id) {
+  const g = sanitizeGoal({ id: id || uid(), name: document.getElementById('m-g-name').value, target: calcAmount(document.getElementById('m-g-target').value), deadline: document.getElementById('m-g-deadline').value, account: document.getElementById('m-g-account').value, saved: calcAmount(document.getElementById('m-g-saved').value) || 0 });
+  if (!g) { toast('目標の名前と目標額を入力してください'); return; }
+  const i = db.goals.findIndex(x => x.id === id);
+  if (i >= 0) db.goals[i] = g; else db.goals.push(g);
+  saveDb(); closeModal(); renderBudget(); toast('貯金目標を保存しました');
+}
+function deleteGoal(id) {
+  if (!confirm('この貯金目標を削除しますか？（明細や口座の残高は変わりません）')) return;
+  db.goals = db.goals.filter(x => x.id !== id); saveDb(); closeModal(); renderBudget();
 }
 function budgetRow(key, name, budget, used, isTotal) {
   const ratio = budget ? used / budget : 0;
@@ -2847,7 +2909,7 @@ const SNAP_KEY = 'kakeibo.syncsnap.v1';
 let syncing = false, syncTimer = null, syncPending = false;
 // 使った人がない明細は従来と同じハッシュになる（既存の明細を再送しないため）
 function entryHash(e) { const h = [e.date, e.type, e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '', e.receiptId || '', e.ruleId || '', e.ruleMonth || '', e.autoPay || '']; if (e.person) h.push(e.person); return JSON.stringify(h); }
-const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members'];
+const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members', 'goals'];
 function metaSection(k) { return k === 'startDay' ? db.settings.startDay : db[k]; }
 function metaHashes() { const h = {}; META_SECTIONS.forEach(k => { h[k] = JSON.stringify(metaSection(k)); }); return h; }
 function applyMetaSection(k, v) {
@@ -2888,7 +2950,7 @@ function renderSyncStatus(msg) {
   if (msg) { el.textContent = msg; return; }
   if (!syncConfigured()) { el.textContent = '未設定'; return; }
   el.textContent = (c.lastSyncAt ? '最終同期: ' + new Date(c.lastSyncAt).toLocaleString('ja-JP') : 'まだ同期していません') + (c.lastResult && c.lastResult !== 'ok' ? ' / ' + c.lastResult : '')
-    + (c.lastSyncAt && c.serverVersion < 2 && db.members.length ? ' / ⚠ スプレッドシート側のスクリプト（sync.gs）が古いため「使った人」は同期されません。READMEの手順で貼り替えてください' : '');
+    + (c.lastSyncAt && c.serverVersion < 2 && (db.members.length || db.goals.length) ? ' / ⚠ スプレッドシート側のスクリプト（sync.gs）が古いため「使った人」と「貯金目標」は同期されません。READMEの手順で貼り替えてください' : '');
 }
 function scheduleSync() {
   if (!syncConfigured() || !db.settings.sync.auto) return;
@@ -2961,7 +3023,7 @@ async function syncNow(silent) {
     const upgraded = prevVer > 0 && prevVer < 2 && c.serverVersion >= 2;
     c.lastSyncAt = Number(json.serverTime) || Date.now();
     c.lastResult = 'ok';
-    const mh = metaHashes(); if (upgraded) delete mh.members;
+    const mh = metaHashes(); if (upgraded) { delete mh.members; delete mh.goals; }
     saveSnap({ entries: Object.fromEntries(syncRecords().filter(e => !(upgraded && e.person)).map(e => [e.id, entryHash(e)])), metaHashes: mh });
     if (upgraded) syncPending = true;
     saveDb(true);

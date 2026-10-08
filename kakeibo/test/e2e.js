@@ -59,6 +59,7 @@ async function openSettings(pg) {
   await pg.click('[data-view=settings]');
   await pg.evaluate(() => document.querySelectorAll('#view-settings details.fold').forEach(d => { d.open = true; }));
 }
+const fmtYenT = n => (n < 0 ? '-' : '') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
 const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(/\s+/g, ' ');
 
 (async () => {
@@ -637,6 +638,22 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.click('[data-view=list]'); await ux.click('#list-body .entry:has-text("パートナー")'); await ux.waitForSelector('#m-e-person');
     await ux.selectOption('#m-e-person', '自分'); await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
     check('編集で使った人を変更', (await ux.evaluate(() => db.entries.filter(e => e.person === '自分').length)) === 1);
+
+    // 貯金目標: 口座連動・手入力・毎月の必要額・達成
+    await ux.click('[data-view=budget]');
+    await ux.click('#goals-card button:has-text("目標を追加")'); await ux.waitForSelector('#m-g-name');
+    await ux.fill('#m-g-name', '家族旅行'); await ux.fill('#m-g-target', '120000');
+    const dl12 = await ux.evaluate(() => addMonths(currentPeriod(), 11));
+    await ux.fill('#m-g-deadline', dl12); await ux.fill('#m-g-saved', '24000');
+    await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
+    const gTxt = await text(ux, '#goals-card');
+    check('貯金目標: 毎月の必要額（残り12か月で96,000円 → 8,000円）', gTxt.includes('家族旅行') && gTxt.includes('20%') && gTxt.includes('残り12か月') && gTxt.includes('¥8,000'), gTxt);
+    await ux.click('#goals-card .brow:has-text("家族旅行")'); await ux.waitForSelector('#m-g-account');
+    await ux.selectOption('#m-g-account', '銀行口座'); await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
+    const gAcc = await ux.evaluate(() => ({ g: db.goals[0].account, bal: accountBalance('銀行口座') }));
+    check('貯金目標: 口座と連動して残高を使う', gAcc.g === '銀行口座' && (await text(ux, '#goals-card')).includes(fmtYenT(gAcc.bal) + ' / ¥120,000'), JSON.stringify(gAcc) + (await text(ux, '#goals-card')));
+    await ux.evaluate(() => { db.goals[0].account = ''; db.goals[0].saved = 130000; saveDb(true); renderBudget(); });
+    check('貯金目標: 達成の表示', (await text(ux, '#goals-card')).includes('達成しました'));
 
     // 日記は入力欄から離れなくても少し待てば保存される
     await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');
