@@ -130,6 +130,9 @@
       background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px;
     }
     .input:focus, .select:focus, .textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,70,229,.08); }
+    .input.amount.expr { font-size: 15px; letter-spacing: 0; }
+    .row2.date-amt { grid-template-columns: minmax(0, 9fr) minmax(0, 11fr); }
+    .row2.date-amt input[type=date] { padding-left: 10px; padding-right: 6px; }
     .input.amount { font-size: 26px; font-weight: 800; text-align: right; letter-spacing: .02em; }
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
@@ -144,6 +147,8 @@
       cursor: pointer;
     }
     .btn:active { opacity: .88; }
+    /* 入力画面の保存ボタンはスクロールしても画面下（タブの上）に残す */
+    .save-sticky { position: sticky; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 10px); z-index: 5; box-shadow: 0 6px 18px rgba(79,70,229,.28); }
     .btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--line); }
     .btn.danger { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-line); }
     .btn.sm { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; border-radius: 10px; }
@@ -179,7 +184,7 @@
     .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
     .summary .tile {
       background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 10px;
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow); min-width: 0;
     }
     .tile .k { font-size: 11px; color: var(--sub); font-weight: 700; }
     .tile .v { font-size: 17px; font-weight: 800; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -224,6 +229,7 @@
     .cal .ce, .cal .ci { font-size: 10px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
     .cal .ce { color: var(--expense); } .cal .ci { color: var(--income); }
     @media (min-width: 560px) { .cal .ce, .cal .ci { font-size: 11px; } .cal .cell { min-height: 68px; } }
+    @media (max-width: 359px) { .cal { gap: 2px; } .cal .cell { padding: 3px 1px 2px; } .cal .ce, .cal .ci { font-size: 9px; letter-spacing: -.03em; } }
 
     /* ─── Report ─────────────────────────── */
     .donut-wrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -270,6 +276,13 @@
     .icon-btn.danger { color: var(--danger); }
     .file-btn { position: relative; overflow: hidden; }
     .file-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+    .set-sec { font-size: 12px; font-weight: 800; color: var(--sub); margin: 18px 4px 8px; letter-spacing: .04em; }
+    .set-sec:first-child { margin-top: 2px; }
+    details.fold > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+    details.fold > summary::-webkit-details-marker { display: none; }
+    details.fold > summary::after { content: "›"; font-size: 20px; color: var(--muted); transform: rotate(90deg); transition: transform .15s; }
+    details.fold[open] > summary { margin-bottom: 10px; }
+    details.fold[open] > summary::after { transform: rotate(-90deg); }
     .note {
       background: var(--card2); border: 1px solid var(--line2); border-radius: 12px;
       padding: 10px 12px; font-size: 12px; line-height: 1.8; color: var(--label);
@@ -337,6 +350,7 @@
     .lock .input { text-align: center; font-size: 24px; letter-spacing: .3em; margin-top: 12px; }
     .search-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
     .search-row .input { flex: 1; }
+    #filter-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
     .search-row label { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: var(--sub); }
 
     /* ─── Toast ──────────────────────────── */
@@ -355,7 +369,54 @@
     .swatch.on { border-color: var(--text); }
     .delta { font-size: 10px; color: var(--sub); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cal .cell .m { font-size: 9px; color: var(--muted); }
+    .cal .d .dw { font-size: 10px; margin-left: 2px; }
+    .week-row { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    .week-row:last-child { border-bottom: none; }
+    .wk-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+    .wk-top .n { font-weight: 700; }
+    .day-diary { font-size: 12px; color: var(--sub); padding: 0 4px 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
     .month-label .range { font-size: 10px; color: var(--sub); font-weight: 600; }
+
+    /* ─── 電卓パレット ───────────────────── */
+    .amt-wrap { position: relative; }
+    .amt-wrap .input.amount { padding-left: 42px; }
+    .calc-btn { position: absolute; left: 5px; top: 50%; transform: translateY(-50%); width: 33px; height: 33px; border: none; border-radius: 10px; background: var(--chip); font-size: 17px; cursor: pointer; }
+    .calc { position: fixed; inset: 0; z-index: 70; display: none; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.25); }
+    .calc.open { display: flex; }
+    .calc-box { width: 100%; max-width: 420px; background: var(--card); border-radius: 22px 22px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); box-shadow: var(--shadow); }
+    @media (min-width: 700px) { .calc { align-items: center; } .calc-box { border-radius: 22px; } }
+    .calc-disp { text-align: right; padding: 4px 6px 10px; min-height: 64px; }
+    .calc-disp .ex { font-size: 15px; color: var(--sub); min-height: 20px; word-break: break-all; }
+    .calc-disp .rs { font-size: 28px; font-weight: 800; }
+    .calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .calc-keys button { height: 54px; border: 1px solid var(--line); background: var(--card2); color: var(--text); border-radius: 14px; font-size: 21px; font-weight: 700; cursor: pointer; }
+    .calc-keys button.op { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+    .calc-keys button.ok { background: var(--accent); color: #fff; border: none; grid-row: span 2; height: auto; font-size: 17px; }
+    .calc-keys button.wide { grid-column: span 2; }
+
+    /* ─── 印刷・PDF ───────────────────────── */
+    #print-area { display: none; }
+    @media print {
+      @page { size: A4; margin: 14mm 12mm; }
+      :root { --bg: #fff; --card: #fff; --text: #111; --sub: #555; --line: #bbb; --line2: #ddd; --income: #0f7a4f; --expense: #b42318; color-scheme: light; }
+      html, body { background: #fff !important; color: #111; }
+      body > *:not(#print-area) { display: none !important; }
+      #print-area { display: block; font-size: 10.5pt; }
+      #print-area h1 { font-size: 16pt; margin: 0 0 2mm; }
+      #print-area h2 { font-size: 12pt; margin: 6mm 0 2mm; border-bottom: 1.5pt solid #333; padding-bottom: 1mm; }
+      #print-area .meta { color: #555; font-size: 9pt; margin-bottom: 4mm; }
+      #print-area table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+      #print-area tr { page-break-inside: avoid; }
+      #print-area th, #print-area td { border-bottom: .5pt solid #ccc; padding: 1.2mm 1.5mm; text-align: left; vertical-align: top; }
+      #print-area th { background: #f2f2f2; font-size: 9pt; }
+      #print-area td.r, #print-area th.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      #print-area tr.sub td { color: #555; font-size: 9pt; }
+      #print-area tr.sub td:first-child { padding-left: 6mm; }
+      #print-area tr.total td { font-weight: 700; border-top: 1pt solid #333; }
+      #print-area .inc { color: #0f7a4f; } #print-area .exp { color: #b42318; }
+      #print-area .sum3 { display: flex; gap: 4mm; } #print-area .sum3 div { flex: 1; border: .5pt solid #bbb; border-radius: 2mm; padding: 2mm 3mm; }
+      #print-area .sum3 b { display: block; font-size: 13pt; }
+    }
   </style>
 </head>
 <body>
@@ -386,14 +447,14 @@
       </div>
       <div id="backup-note"></div>
       <div id="fav-row" class="chips" style="margin-bottom:10px"></div>
-      <div class="row2">
+      <div class="row2 date-amt">
         <div class="field">
           <label>日付</label>
           <input id="in-date" class="input" type="date" onchange="renderDayEntries()">
         </div>
         <div class="field">
           <label>金額（円）</label>
-          <input id="in-amount" class="input amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off">
+          <div class="amt-wrap"><button type="button" class="calc-btn" onclick="openCalc('in-amount')" aria-label="電卓で入力">🧮</button><input id="in-amount" class="input amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off" title="1280+350 のような計算式も入力できます"></div>
         </div>
       </div>
       <div id="in-catblock">
@@ -428,7 +489,11 @@
           <select id="in-account" class="select"></select>
         </div>
       </div>
-      <button class="btn" onclick="saveEntry()">保存する</button>
+      <div class="field" id="in-personfield" style="display:none">
+        <label>使った人</label>
+        <div id="in-persons" class="chips"></div>
+      </div>
+      <button class="btn save-sticky" id="save-btn" onclick="saveEntry()">保存する</button>
       <div class="btn-row">
         <button class="btn secondary sm" onclick="openReceipt()">🧾 レシートをまとめて入力（📷 読み取り対応）</button>
         <button class="btn secondary sm" id="fav-add-btn" onclick="addFavorite()">☆ よく使う入力に登録</button>
@@ -447,8 +512,9 @@
     <div class="summary" id="list-summary"></div>
     <div class="search-row">
       <input id="list-q" class="input" type="search" placeholder="分類・項目・メモ・店名で検索" oninput="renderList()">
-      <label><input type="checkbox" id="list-all" onchange="renderList()">全期間</label>
+      <button class="btn secondary sm" id="filter-btn" onclick="toggleFilter()">絞り込み</button>
     </div>
+    <div class="card" id="filter-panel" style="display:none"></div>
     <div id="list-body"></div>
   </section>
 
@@ -462,6 +528,7 @@
       <div class="card-title"><span id="cal-day-title">日付を選択</span><button class="btn secondary sm" id="cal-add-btn" onclick="goInputFor(ui.selectedDay)" style="display:none">＋ この日に入力</button></div>
       <div id="cal-day-entries"></div>
     </div>
+    <div class="card" id="cal-weeks"></div>
   </section>
 
   <!-- ─── 集計 ─────────────────────────── -->
@@ -480,80 +547,12 @@
 
   <!-- ─── 設定 ─────────────────────────── -->
   <section id="view-settings" class="view">
-    <div class="card">
-      <div class="card-title">うきうき家計簿から移行（CSV取り込み）</div>
-      <div class="note">
-        うきうき家計簿で「CSV出力（エクスポート）」したファイルを選ぶと、列を自動判定して取り込みます。
-        文字コード（Shift_JIS / UTF-8）は自動判定します。分類や項目は取り込み時に自動で追加され、
-        既に登録済みの同じ内容の行は重複として除外できます。
-      </div>
-      <div class="btn-row">
-        <label class="btn file-btn" style="margin-top:0">CSVファイルを選ぶ<input type="file" accept=".csv,.txt,text/csv,text/plain" onchange="onImportFile(this)"></label>
-      </div>
-      <div id="import-undo"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">スプレッドシート同期（複数端末・バックアップ）</div>
-      <div class="field"><label>同期用URL（GASウェブアプリのURL）</label><input id="set-sync-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setSyncOpt('url', this.value)"></div>
-      <div class="field"><label>同期キー（GASのスクリプト プロパティ SYNC_KEY と同じ文字列）</label><input id="set-sync-key" class="input" type="password" autocomplete="off" onchange="setSyncOpt('key', this.value)"></div>
-      <div class="check"><input type="checkbox" id="set-sync-auto" onchange="setSyncOpt('auto', this.checked)"><label for="set-sync-auto">自動で同期する（入力後・起動時・復帰時）</label></div>
-      <div class="btn-row"><button class="btn secondary sm" onclick="syncNow(false)">今すぐ同期</button></div>
-      <div id="sync-status" class="hint"></div>
-      <div class="hint">Googleスプレッドシートにデータを保存し、複数の端末や家族で同じ家計簿を使えます。セットアップ手順は <code>kakeibo/gas/sync.gs</code> とREADMEを参照してください。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">月の開始日（締め日）</div>
-      <div class="field">
-        <select id="set-startday" class="select" onchange="setStartDay(this.value)"></select>
-      </div>
-      <div class="hint">給料日やカードの締め日に合わせて月の区切りを変えられます。例えば「25日」にすると、9月25日〜10月24日が「9月」として集計されます。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">バックアップ・書き出し</div>
-      <div class="btn-row">
-        <button class="btn secondary sm" onclick="exportJson()">JSONバックアップを保存</button>
-        <button class="btn secondary sm" onclick="exportCsv('all')">全データをCSVで保存</button>
-        <button class="btn secondary sm" onclick="exportCsv('month')">表示中の月をCSVで保存</button>
-        <label class="btn secondary sm file-btn">JSONバックアップを復元<input type="file" accept=".json,application/json" onchange="onRestoreFile(this)"></label>
-      </div>
-      <div class="hint">データはこの端末のブラウザ内（localStorage）にのみ保存されます。機種変更やブラウザのデータ削除に備えて、定期的にJSONバックアップを保存してください。</div>
-    </div>
-
+    <div class="set-sec">よく使う設定</div>
     <div class="card">
       <div class="card-title">口座・支払方法の管理</div>
       <div id="acct-list"></div>
       <div class="btn-row"><button class="btn secondary sm" onclick="openAccount()">＋ 口座を追加</button></div>
       <div class="hint">現金・クレジットカード・銀行口座などを登録すると、入力時に選べるようになり、一覧画面で残高を確認できます。口座間のお金の移動は「振替」で入力します。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">レシート読み取りの設定</div>
-      <div class="field">
-        <label>読み取り方法</label>
-        <select id="set-ocr" class="select" onchange="setOcrMode(this.value)">
-          <option value="browser">ブラウザ内OCR（無料・初回に辞書を自動ダウンロード）</option>
-          <option value="ai">AI読み取り（Google Apps Script 経由・要APIキー）</option>
-        </select>
-      </div>
-      <div class="field" id="set-ocr-url-field" style="display:none">
-        <label>AI読み取り用のURL（GASウェブアプリのURL）</label>
-        <input id="set-ocr-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setOcrUrl(this.value)">
-      </div>
-      <div class="field" id="set-ocr-key-field" style="display:none">
-        <label>AI読み取りの合言葉（GASのスクリプト プロパティ OCR_KEY と同じ文字列）</label>
-        <input id="set-ocr-key" class="input" type="password" autocomplete="off" onchange="setOcrKey(this.value)">
-      </div>
-      <div class="hint">AI読み取りは <code>kakeibo/gas/receipt-ai.gs</code> を Google Apps Script に貼り付けてデプロイし、そのURLを設定します（手順はREADME参照）。精度はAI読み取りの方が高く、品目の分類まで自動で推定します。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">暗証番号ロック</div>
-      <div id="pin-status" class="small" style="margin-bottom:8px"></div>
-      <div class="btn-row" id="pin-btns"></div>
-      <div class="hint">アプリを開いたときと、5分以上バックグラウンドにしたあとに暗証番号を求めます。データは端末内に保存されるため、端末自体のロックも併用してください。</div>
     </div>
 
     <div class="card">
@@ -574,10 +573,91 @@
     </div>
 
     <div class="card">
-      <div class="card-title">データの初期化</div>
+      <div class="card-title">バックアップ・書き出し</div>
+      <div class="btn-row">
+        <button class="btn secondary sm" onclick="exportJson()">JSONバックアップを保存</button>
+        <button class="btn secondary sm" onclick="exportCsv('all')">全データをCSVで保存</button>
+        <button class="btn secondary sm" onclick="exportCsv('month')">表示中の月をCSVで保存</button>
+        <label class="btn secondary sm file-btn">JSONバックアップを復元<input type="file" accept=".json,application/json" onchange="onRestoreFile(this)"></label>
+      </div>
+      <div class="hint">データはこの端末のブラウザ内（localStorage）にのみ保存されます。機種変更やブラウザのデータ削除に備えて、定期的にJSONバックアップを保存してください。</div>
+      <div class="hint" id="storage-usage"></div>
+    </div>
+
+    <div class="set-sec">データの移行・同期</div>
+    <details class="card fold" id="fold-import">
+      <summary class="card-title">うきうき家計簿から移行（CSV取り込み）</summary>
+      <div class="note">
+        うきうき家計簿で「CSV出力（エクスポート）」したファイルを選ぶと、列を自動判定して取り込みます。
+        文字コード（Shift_JIS / UTF-8）は自動判定します。うきうき家計簿の「項目」は分類に、「内訳」は項目に、
+        「品名」はメモに、「お店」は店名に入ります。分類や口座は取り込み時に自動で追加され、
+        既に登録済みの同じ内容の行は重複として除外できます。
+      </div>
+      <div class="btn-row">
+        <label class="btn file-btn" style="margin-top:0">CSVファイルを選ぶ<input type="file" accept=".csv,.txt,text/csv,text/plain" onchange="onImportFile(this)"></label>
+      </div>
+      <div id="import-undo"></div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">スプレッドシート同期（複数端末・バックアップ）</summary>
+      <div class="field"><label>同期用URL（GASウェブアプリのURL）</label><input id="set-sync-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setSyncOpt('url', this.value)"></div>
+      <div class="field"><label>同期キー（GASのスクリプト プロパティ SYNC_KEY と同じ文字列）</label><input id="set-sync-key" class="input" type="password" autocomplete="off" onchange="setSyncOpt('key', this.value)"></div>
+      <div class="check"><input type="checkbox" id="set-sync-auto" onchange="setSyncOpt('auto', this.checked)"><label for="set-sync-auto">自動で同期する（入力後・起動時・復帰時）</label></div>
+      <div class="btn-row"><button class="btn secondary sm" onclick="syncNow(false)">今すぐ同期</button></div>
+      <div id="sync-status" class="hint"></div>
+      <div class="hint">Googleスプレッドシートにデータを保存し、複数の端末や家族で同じ家計簿を使えます。セットアップ手順は <code>kakeibo/gas/sync.gs</code> とREADMEを参照してください。</div>
+    </details>
+
+    <div class="set-sec">その他の設定（タップで開く）</div>
+    <details class="card fold" id="fold-members">
+      <summary class="card-title">使った人（家族で使うとき）</summary>
+      <div id="member-list"></div>
+      <div class="btn-row"><button class="btn secondary sm" onclick="addMember()">＋ 使った人を追加</button></div>
+      <div class="hint">家族の名前（例: 自分・妻・子ども）を登録すると、入力画面で「使った人」を選べるようになり、集計で人別の支出を確認できます。登録しなければ表示されません。</div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">月の開始日（締め日）</summary>
+      <div class="field">
+        <select id="set-startday" class="select" onchange="setStartDay(this.value)"></select>
+      </div>
+      <div class="hint">給料日やカードの締め日に合わせて月の区切りを変えられます。例えば「25日」にすると、9月25日〜10月24日が「9月」として集計されます。</div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">レシート読み取りの設定</summary>
+      <div class="field">
+        <label>読み取り方法</label>
+        <select id="set-ocr" class="select" onchange="setOcrMode(this.value)">
+          <option value="browser">ブラウザ内OCR（無料・初回に辞書を自動ダウンロード）</option>
+          <option value="ai">AI読み取り（Google Apps Script 経由・要APIキー）</option>
+        </select>
+      </div>
+      <div class="field" id="set-ocr-url-field" style="display:none">
+        <label>AI読み取り用のURL（GASウェブアプリのURL）</label>
+        <input id="set-ocr-url" class="input" type="url" placeholder="https://script.google.com/macros/s/…/exec" onchange="setOcrUrl(this.value)">
+      </div>
+      <div class="field" id="set-ocr-key-field" style="display:none">
+        <label>AI読み取りの合言葉（GASのスクリプト プロパティ OCR_KEY と同じ文字列）</label>
+        <input id="set-ocr-key" class="input" type="password" autocomplete="off" onchange="setOcrKey(this.value)">
+      </div>
+      <div class="hint">AI読み取りは <code>kakeibo/gas/receipt-ai.gs</code> を Google Apps Script に貼り付けてデプロイし、そのURLを設定します（手順はREADME参照）。精度はAI読み取りの方が高く、品目の分類まで自動で推定します。</div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">暗証番号ロック</summary>
+      <div id="pin-status" class="small" style="margin-bottom:8px"></div>
+      <div class="btn-row" id="pin-btns"></div>
+      <div class="hint">アプリを開いたときと、5分以上バックグラウンドにしたあとに暗証番号を求めます。データは端末内に保存されるため、端末自体のロックも併用してください。</div>
+    </details>
+
+    <details class="card fold">
+      <summary class="card-title">データの初期化</summary>
       <div class="btn-row"><button class="btn danger sm" onclick="wipeAll()">すべてのデータを削除</button></div>
       <div class="hint" id="stats-hint"></div>
-    </div>
+    </details>
+
   </section>
 </main>
 
@@ -606,7 +686,54 @@
   <div class="modal-box" id="modal-box"></div>
 </div>
 <div id="toast"></div>
+<div id="print-area"></div>
+<div id="calc" class="calc" onclick="if(event.target===this) closeCalc()">
+  <div class="calc-box" role="dialog" aria-label="電卓">
+    <div class="calc-disp"><div class="ex" id="calc-ex"></div><div class="rs num" id="calc-rs">¥0</div></div>
+    <div class="calc-keys" id="calc-keys"></div>
+  </div>
+</div>
 
+<script>
+/* ─── 救出画面 ─────────────────────────────────────────────
+   本体のスクリプトで起動中にエラーが起きると画面が表示されなくなるため、
+   本体とは独立したこの小さなスクリプトで、端末内のデータをそのまま書き出せるようにする。
+   本体は起動の最後に window.__kakeiboBooted = true を立てる。 */
+(function () {
+  var errors = [];
+  window.addEventListener('error', function (e) { errors.push(String(e.message || e.error || 'error') + (e.lineno ? '（' + e.lineno + '行目）' : '')); });
+  window.addEventListener('load', function () { setTimeout(function () { if (!window.__kakeiboBooted) showRescue(); }, 1500); });
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function save() {
+    var raw = null;
+    try { raw = localStorage.getItem('kakeibo.v1'); } catch (e) {}
+    if (!raw) { alert('この端末に保存されたデータが見つかりませんでした'); return; }
+    var d = new Date(), a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+    a.download = 'kakeibo_rescue_' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '.json';
+    document.body.appendChild(a); a.click();
+  }
+  function showRescue() {
+    if (document.getElementById('rescue')) return;
+    var raw = null; try { raw = localStorage.getItem('kakeibo.v1'); } catch (e) {}
+    var enc = !!(raw && raw.indexOf('"enc":1') >= 0);
+    var box = document.createElement('div');
+    box.id = 'rescue';
+    box.setAttribute('style', 'position:fixed;inset:0;z-index:999;background:#f6f4ef;color:#222;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif');
+    box.innerHTML = '<div style="max-width:420px;width:100%;background:#fff;border:1px solid #e7e1d7;border-radius:18px;padding:22px 18px;line-height:1.7">'
+      + '<div style="font-size:19px;font-weight:800;margin-bottom:8px">家計簿を開けませんでした</div>'
+      + '<div style="font-size:14px">起動中にエラーが起きました。<b>データはこの端末に残っています。</b>まず下のボタンでデータを保存してください。'
+      + (raw ? '（約' + Math.max(1, Math.round(raw.length / 1024)) + 'KB）' : '（保存されたデータは見つかりません）')
+      + (enc ? '<br>データは暗号化されています。保存したファイルは、直った版で暗証番号を入れると読めるようになります。' : '<br>保存したファイルは、直った版の「設定 → JSONバックアップを復元」で読み込めます。') + '</div>'
+      + '<button id="rescue-save" style="width:100%;margin-top:14px;padding:14px;border:none;border-radius:14px;background:#4f46e5;color:#fff;font-size:15px;font-weight:700">データを保存する</button>'
+      + '<button id="rescue-reload" style="width:100%;margin-top:8px;padding:12px;border:1px solid #e7e1d7;border-radius:14px;background:#fff;font-size:14px;font-weight:700">再読み込みする</button>'
+      + '<div style="font-size:11px;color:#6b6b6b;margin-top:12px;word-break:break-all">エラーの内容: ' + (errors.join(' / ').replace(/</g, '&lt;') || '不明') + '</div></div>';
+    document.body.appendChild(box);
+    document.getElementById('rescue-save').onclick = save;
+    document.getElementById('rescue-reload').onclick = function () { location.reload(); };
+  }
+})();
+</script>
 <script>
 /* ════════════════════════════════════════════════════════════
    家計簿  — データはブラウザの localStorage に保存（サーバー不要）
@@ -645,6 +772,10 @@ const DEFAULT_CATEGORIES = {
   ]
 };
 
+// loadDb（起動時の読み込み）の中で使う定数は、ここより前に定義する
+const YM_RE = /^\d{4}-\d{2}$/;
+// 日記の天気（loadDb より前に定義する）
+const WEATHERS = [['sun', '☀️', '晴れ'], ['cloud', '☁️', 'くもり'], ['rain', '☔', '雨'], ['snow', '⛄', '雪']];
 const DEFAULT_ACCOUNTS = [{ name: '現金', initial: 0 }, { name: '銀行口座', initial: 0 }, { name: 'クレジットカード', initial: 0 }];
 
 /* ─── 状態 ─────────────────────────────── */
@@ -716,6 +847,9 @@ function normalizeDb(data) {
     favorites: Array.isArray(d.favorites) ? d.favorites.filter(f => f && f.name).map(f => ({ id: safeId(f.id), name: String(f.name), type: f.type === 'income' ? 'income' : 'expense', category: String(f.category || ''), item: String(f.item || ''), amount: Math.abs(Math.round(num0(f.amount))), memo: String(f.memo || ''), account: String(f.account || '') })) : [],
     lastImport: (d.lastImport && Array.isArray(d.lastImport.ids) && d.lastImport.ids.length) ? { at: String(d.lastImport.at || ''), ids: d.lastImport.ids.map(String) } : null,
     recurring: Array.isArray(d.recurring) ? d.recurring.map(sanitizeRule).filter(Boolean) : [],
+    diary: sanitizeDiary(d.diary),
+    members: sanitizeMembers(d.members),
+    goals: Array.isArray(d.goals) ? d.goals.map(sanitizeGoal).filter(Boolean).slice(0, 30) : [],
     accounts: Array.isArray(d.accounts) ? d.accounts.filter(a => a && a.name).map(a => {
       const o = { id: safeId(a.id), name: String(a.name), initial: Math.round(num0(a.initial)) };
       if (a.card) { o.card = true; o.closingDay = Math.min(31, Math.max(1, Math.round(num0(a.closingDay)) || 15)); o.payDay = Math.min(31, Math.max(1, Math.round(num0(a.payDay)) || 10)); o.payOffset = a.payOffset === 2 ? 2 : 1; o.payAccount = String(a.payAccount || ''); o.payFrom = /^\d{4}-\d{2}$/.test(String(a.payFrom || '')) ? a.payFrom : ''; }
@@ -728,13 +862,16 @@ function normalizeDb(data) {
       ocrKey: String(d.settings && d.settings.ocrKey || ''),
       encrypt: !!(d.settings && d.settings.encrypt),
       lastBackupAt: num0(d.settings && d.settings.lastBackupAt),
+      lastPerson: String(d.settings && d.settings.lastPerson || ''),
+      lastAccount: { expense: String(d.settings && d.settings.lastAccount && d.settings.lastAccount.expense || ''), income: String(d.settings && d.settings.lastAccount && d.settings.lastAccount.income || '') },
       startDay: Math.min(28, Math.max(1, Math.round(num0(d.settings && d.settings.startDay)) || 1)),
       sync: {
         url: String(d.settings && d.settings.sync && d.settings.sync.url || ''),
         key: String(d.settings && d.settings.sync && d.settings.sync.key || ''),
         auto: !(d.settings && d.settings.sync && d.settings.sync.auto === false),
         lastSyncAt: num0(d.settings && d.settings.sync && d.settings.sync.lastSyncAt),
-        lastResult: String(d.settings && d.settings.sync && d.settings.sync.lastResult || '')
+        lastResult: String(d.settings && d.settings.sync && d.settings.sync.lastResult || ''),
+        serverVersion: num0(d.settings && d.settings.sync && d.settings.sync.serverVersion)
       }
     }
   };
@@ -745,6 +882,7 @@ function normalizeDb(data) {
       out.budgets.overrides[ym] = { total: num0(o.total), categories: cats };
     }
   }
+  out.entries.forEach(e => { if (e.person && !out.members.includes(e.person) && out.members.length < 20) out.members.push(e.person); });
   // 明細に出てくる口座名は必ず口座一覧に存在させる
   out.entries.forEach(e => { [e.account, e.toAccount].forEach(n => { if (n && !out.accounts.find(a => a.name === n)) out.accounts.push({ id: uid(), name: n, initial: 0 }); }); });
   if (d.budgets && d.budgets.categories) {
@@ -752,6 +890,27 @@ function normalizeDb(data) {
   }
   return out;
 }
+// 日記: { 'YYYY-MM-DD': { w: 天気, t: 本文 } }
+function sanitizeDiaryDay(v) {
+  if (!v || typeof v !== 'object') return null;
+  const w = WEATHERS.some(x => x[0] === v.w) ? v.w : '';
+  const t = String(v.t || '').slice(0, 4000);
+  return (w || t.trim()) ? { w, t } : null;
+}
+function sanitizeDiary(d) {
+  const out = {};
+  if (d && typeof d === 'object') for (const k in d) { if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue; const v = sanitizeDiaryDay(d[k]); if (v) out[k] = v; }
+  return out;
+}
+// 貯金目標: 口座と連動するなら口座残高、しなければ手入力の「今の額」で進み具合を見る
+function sanitizeGoal(g) {
+  if (!g || typeof g !== 'object') return null;
+  const target = Math.round(num0(g.target)); const name = String(g.name || '').trim().slice(0, 40);
+  if (!(target > 0) || !name) return null;
+  return { id: safeId(g.id), name, target, deadline: YM_RE.test(String(g.deadline || '')) ? String(g.deadline) : '', account: String(g.account || ''), saved: Math.round(num0(g.saved)) };
+}
+// 使った人（家族のメンバー）の名前一覧
+function sanitizeMembers(m) { return Array.isArray(m) ? [...new Set(m.map(x => String(x == null ? '' : x).trim().slice(0, 20)).filter(Boolean))].slice(0, 20) : []; }
 function sanitizeCats(cats, fallback) {
   if (!Array.isArray(cats) || !cats.length) return JSON.parse(JSON.stringify(fallback));
   return cats.filter(c => c && c.name).map(c => { const o = { name: String(c.name), items: Array.isArray(c.items) ? c.items.map(String) : [] }; if (c.color != null && c.color >= 0 && c.color <= 8) o.color = Number(c.color); return o; });
@@ -775,11 +934,11 @@ function sanitizeEntry(e) {
     receiptId: e.receiptId ? safeId(e.receiptId) : undefined,
     ruleId: e.ruleId ? safeId(e.ruleId) : undefined,
     ruleMonth: /^\d{4}-\d{2}$/.test(String(e.ruleMonth || '')) ? e.ruleMonth : undefined,
-    autoPay: e.autoPay ? String(e.autoPay).replace(/[^A-Za-z0-9_:-]/g, '').slice(0, 80) : undefined
+    autoPay: e.autoPay ? String(e.autoPay).replace(/[^A-Za-z0-9_:-]/g, '').slice(0, 80) : undefined,
+    person: e.person ? String(e.person).slice(0, 20) : undefined
   };
 }
 function num0(v) { const n = Number(v); return isFinite(n) ? n : 0; }
-const YM_RE = /^\d{4}-\d{2}$/;
 function sanitizeRule(r) {
   if (!r || typeof r !== 'object') return null;
   const type = r.type === 'income' ? 'income' : r.type === 'transfer' ? 'transfer' : 'expense';
@@ -815,7 +974,13 @@ function ymd(y, m, d) { return y + '-' + pad2(m) + '-' + pad2(d); }
 function daysInMonth(ym) { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); }
 function addMonths(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
 function fmtYen(n) { return (n < 0 ? '-' : '') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP'); }
-function fmtCompact(n) { return n >= 10000 ? (Math.round(n / 1000) / 10).toLocaleString('ja-JP') + '万' : n.toLocaleString('ja-JP'); }
+// カレンダーの狭いマス用: 1万未満はそのまま、10万未満は100円単位（1.03万）、それ以上は1000円単位（12.3万）
+function fmtCompact(n) {
+  if (n < 10000) return n.toLocaleString('ja-JP');
+  const man = n / 10000;
+  const digits = n < 100000 ? 2 : n < 1000000 ? 1 : 0;
+  return Number(man.toFixed(digits)).toLocaleString('ja-JP', { maximumFractionDigits: digits }) + '万';
+}
 function fmtMonth(ym) { const [y, m] = String(ym).split('-'); return Number(y) + '年' + Number(m) + '月'; }
 function fmtDateJa(ds) { const [y, m, d] = ds.split('-').map(Number); const w = '日月火水木金土'[new Date(y, m - 1, d).getDay()]; return m + '月' + d + '日（' + w + '）'; }
 function esc(s) {
@@ -856,6 +1021,17 @@ function catColor(type, name) {
   if (c.color != null) return c.color === 8 ? OTHER_COLOR : seriesColor(c.color);
   return idx < 8 ? seriesColor(idx) : OTHER_COLOR;
 }
+// グラフ用の色: 金額の多い順に、分類の色を優先しつつ重ならない色を割り当てる（上位8つまで。残りはグレー）
+function chartColors(type, names) {
+  const cats = catsOf(type), out = new Map(), used = new Set();
+  const own = name => { const idx = cats.findIndex(c => c.name === name); if (idx < 0) return 8; const c = cats[idx]; return c.color != null ? c.color : (idx < 8 ? idx : 8); };
+  const top = names.slice(0, 8);
+  top.forEach(n => { const k = own(n); if (k !== 8 && !used.has(k)) { out.set(n, k); used.add(k); } });
+  top.forEach(n => { if (out.has(n)) return; for (let k = 0; k < 8; k++) if (!used.has(k)) { out.set(n, k); used.add(k); return; } });
+  const res = new Map();
+  names.forEach(n => res.set(n, out.has(n) ? seriesColor(out.get(n)) : OTHER_COLOR));
+  return res;
+}
 function startDay() { return db.settings.startDay || 1; }
 function addDays(ds, n) { const [y, m, d] = ds.split('-').map(Number); const t = new Date(y, m - 1, d + n); return t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()); }
 function periodOf(ds) { const sd = startDay(); if (sd === 1) return ds.slice(0, 7); return Number(ds.slice(8)) >= sd ? ds.slice(0, 7) : addMonths(ds.slice(0, 7), -1); }
@@ -872,11 +1048,17 @@ function ensureAccount(name) {
 }
 function renameEverywhere(kind, oldName, newName) {
   // 分類名・口座名の変更/削除に伴う参照の付け替え（newName が null なら参照を外す）
+  if (kind === 'person') {
+    db.entries.forEach(e => { if (e.person === oldName) { if (newName) e.person = newName; else delete e.person; } });
+    if (db.settings.lastPerson === oldName) db.settings.lastPerson = newName || '';
+    return;
+  }
   if (kind === 'account') {
     db.entries.forEach(e => { if (e.account === oldName) e.account = newName || ''; if (e.toAccount === oldName) e.toAccount = newName || ''; });
     db.recurring.forEach(r => { if (r.account === oldName) r.account = newName || ''; if (r.toAccount === oldName) r.toAccount = newName || ''; });
     db.favorites.forEach(f => { if (f.account === oldName) f.account = newName || ''; });
     db.accounts.forEach(a => { if (a.card && a.payAccount === oldName) a.payAccount = newName || ''; });
+    db.goals.forEach(g => { if (g.account === oldName) g.account = newName || ''; });
   } else {
     const type = kind;
     const to = newName || 'その他';
@@ -976,6 +1158,24 @@ function setEntryType(t) {
   document.getElementById('type-inc').className = t === 'income' ? 'on inc' : '';
   document.getElementById('type-trn').className = t === 'transfer' ? 'on trn' : '';
   renderInput();
+  presetAccount();
+}
+function personChipsHtml(cur, fn) {
+  return db.members.map(m => '<button class="chip' + (m === cur ? ' on' : '') + '" onclick="' + fn + '(this.dataset.n)" data-n="' + esc(m) + '">👤 ' + esc(m) + '</button>').join('');
+}
+function renderPersonField() {
+  const f = document.getElementById('in-personfield');
+  f.style.display = db.members.length && ui.entryType !== 'transfer' ? '' : 'none';
+  if (ui.entryPerson === undefined) ui.entryPerson = db.members.includes(db.settings.lastPerson) ? db.settings.lastPerson : '';
+  if (ui.entryPerson && !db.members.includes(ui.entryPerson)) ui.entryPerson = '';
+  document.getElementById('in-persons').innerHTML = personChipsHtml(ui.entryPerson, 'pickPerson');
+}
+function pickPerson(n) { ui.entryPerson = ui.entryPerson === n ? '' : n; renderPersonField(); }
+// 前回その種別で使った支払方法・口座を初期値にする
+function presetAccount() {
+  if (ui.entryType === 'transfer') return;
+  const name = db.settings.lastAccount[ui.entryType];
+  document.getElementById('in-account').value = name && db.accounts.find(a => a.name === name) ? name : '';
 }
 function renderInput() {
   const dateEl = document.getElementById('in-date');
@@ -992,6 +1192,8 @@ function renderInput() {
     to.innerHTML = accountOptions(to.value || accountNames()[1] || accountNames()[0], false);
     renderFavorites();
     renderDayEntries();
+    renderPersonField();
+    updateSaveLabel();
     return;
   }
   const cats = catsOf(ui.entryType);
@@ -1010,6 +1212,8 @@ function renderInput() {
   renderFavorites();
   renderBackupNote();
   renderDayEntries();
+  renderPersonField();
+  updateSaveLabel();
 }
 function pickCat(name) { ui.entryCat = name; document.getElementById('in-item').value = ''; renderInput(); }
 function itemHistory(type, category) {
@@ -1027,7 +1231,7 @@ function addFavorite() {
   if (ui.entryType === 'transfer') return;
   if (!ui.entryCat) { toast('分類を選択してください'); return; }
   const item = document.getElementById('in-item').value.trim();
-  const amount = parseAmount(document.getElementById('in-amount').value) || 0;
+  const amount = calcAmount(document.getElementById('in-amount').value) || 0;
   const def = (item || ui.entryCat) + (amount ? ' ' + fmtYen(Math.abs(amount)) : '');
   const name = (prompt('よく使う入力の名前', def) || '').trim();
   if (!name) return;
@@ -1052,6 +1256,7 @@ function fillInputForm(f) {
   document.getElementById('in-item').value = f.item || '';
   document.getElementById('in-amount').value = f.amount ? String(f.amount) : '';
   document.getElementById('in-memo').value = f.memo || '';
+  if (f.person !== undefined) ui.entryPerson = f.person || '';
   renderInput();
   document.getElementById('in-account').value = f.account || '';
 }
@@ -1063,7 +1268,7 @@ function pickItem(name) {
 }
 function saveEntry() {
   const date = document.getElementById('in-date').value;
-  const amount = parseAmount(document.getElementById('in-amount').value);
+  const amount = calcAmount(document.getElementById('in-amount').value);
   if (!date) { toast('日付を入力してください'); return; }
   if (amount == null || amount === 0) { toast('金額を入力してください'); document.getElementById('in-amount').focus(); return; }
   let e;
@@ -1082,6 +1287,9 @@ function saveEntry() {
       account: document.getElementById('in-account').value
     };
     ensureCategory(e.type, e.category, item);
+    db.settings.lastAccount[e.type] = e.account;
+    if (db.members.length && ui.entryPerson) e.person = ui.entryPerson;
+    if (db.members.length) db.settings.lastPerson = ui.entryPerson || '';
   }
   db.entries.push(e);
   saveDb();
@@ -1090,6 +1298,14 @@ function saveEntry() {
   document.getElementById('in-memo').value = '';
   toast(typeLabel(e.type) + ' ' + fmtYen(e.amount) + ' を保存しました');
   renderInput();
+}
+// 保存ボタンに種別と金額（計算式なら計算結果）を表示する
+function updateSaveLabel() {
+  const btn = document.getElementById('save-btn'); if (!btn) return;
+  const el = document.getElementById('in-amount');
+  const v = calcAmount(el.value);
+  el.classList.toggle('expr', isExpr(el.value)); // 計算式の間は文字を小さくして全体を見せる
+  btn.textContent = v ? typeLabel(ui.entryType) + ' ' + fmtYen(Math.abs(v)) + ' を保存' : '保存する';
 }
 function renderDayEntries() {
   const date = document.getElementById('in-date').value || todayStr();
@@ -1112,7 +1328,7 @@ function entryRow(e) {
     color = OTHER_COLOR; amtCls = 'trn'; sign = '';
   } else {
     title = e.item ? e.item : e.category;
-    sub = [e.item ? e.category : '', e.store, e.memo, e.account].filter(Boolean).join(' · ');
+    sub = [e.item ? e.category : '', e.store, e.memo, e.account, e.person ? '👤' + e.person : ''].filter(Boolean).join(' · ');
     color = catColor(e.type, e.category); amtCls = e.type === 'income' ? 'inc' : 'exp'; sign = e.type === 'income' ? '+' : '-';
   }
   return '<div class="entry" onclick="openEdit(\'' + e.id + '\')">'
@@ -1121,15 +1337,17 @@ function entryRow(e) {
     + '<div class="amt num ' + amtCls + '">' + sign + fmtYen(e.amount) + '</div>'
     + '</div>';
 }
-function entrySearchText(e) { return [e.category, e.item, e.memo, e.account, e.toAccount, e.store, e.type === 'transfer' ? '振替' : ''].join(' ').toLowerCase(); }
+function entrySearchText(e) { return [e.category, e.item, e.memo, e.account, e.toAccount, e.store, e.person, e.type === 'transfer' ? '振替' : ''].join(' ').toLowerCase(); }
 function groupedByDay(list) {
   const map = new Map();
   sortEntries(list).forEach(e => { if (!map.has(e.date)) map.set(e.date, []); map.get(e.date).push(e); });
   let html = '';
   map.forEach((arr, date) => {
     const ex = sumBy(arr, 'expense'), inc = sumBy(arr, 'income');
-    html += '<div class="day-head"><span>' + fmtDateJa(date) + '</span><span class="num">'
+    const dy = db.diary[date];
+    html += '<div class="day-head"><span>' + fmtDateJa(date) + (dy && dy.w ? ' ' + ((WEATHERS.find(x => x[0] === dy.w) || [])[1] || '') : '') + '</span><span class="num">'
       + (inc ? '<span class="inc">+' + fmtYen(inc) + '</span> ' : '') + (ex ? '<span class="exp">-' + fmtYen(ex) + '</span>' : '') + '</span></div>'
+      + (dy && dy.t ? '<div class="day-diary">📝 ' + esc(dy.t.length > 80 ? dy.t.slice(0, 80) + '…' : dy.t) + '</div>' : '')
       + arr.map(entryRow).join('');
   });
   return html;
@@ -1139,7 +1357,7 @@ function summaryTiles(list, prev) {
   const delta = (cur, p, worseIfUp) => {
     if (!prev) return '';
     const d = cur - p; const cls = d === 0 ? '' : ((d > 0) === worseIfUp ? ' exp' : ' inc');
-    return '<div class="delta">前月 ' + fmtYen(p) + ' <span class="' + cls + '">' + (d >= 0 ? '+' : '-') + fmtYen(Math.abs(d)) + '</span></div>';
+    return '<div class="delta" title="前月 ' + fmtYen(p) + '">前月比 <span class="' + cls + '">' + (d >= 0 ? '+' : '-') + fmtYen(Math.abs(d)) + '</span></div>';
   };
   const pInc = prev ? sumBy(prev, 'income') : 0, pEx = prev ? sumBy(prev, 'expense') : 0;
   return '<div class="tile"><div class="k">収入</div><div class="v num inc">' + fmtYen(inc) + '</div>' + delta(inc, pInc, false) + '</div>'
@@ -1148,21 +1366,63 @@ function summaryTiles(list, prev) {
 }
 
 /* ─── 一覧 ───────────────────────────── */
+/* ─── 一覧の絞り込み（期間・種別・分類・口座・金額） ─── */
+const FILTER0 = { period: 'month', from: '', to: '', type: '', category: '', account: '', person: '', min: '', max: '' };
+ui.filter = Object.assign({}, FILTER0);
+function filterCount() {
+  const f = ui.filter;
+  return (f.period !== 'month' ? 1 : 0) + ['type', 'category', 'account', 'person'].filter(k => f[k]).length + ((f.min !== '' || f.max !== '') ? 1 : 0);
+}
+function toggleFilter() { ui.filterOpen = !ui.filterOpen; renderFilterPanel(); }
+function setFilter(k, v) { ui.filter[k] = v; if (k === 'period') renderFilterPanel(); else updateFilterBtn(); renderList(); }
+function clearFilter() { ui.filter = Object.assign({}, FILTER0); document.getElementById('list-q').value = ''; renderFilterPanel(); renderList(); }
+function updateFilterBtn() { const n = filterCount(); const b = document.getElementById('filter-btn'); b.textContent = '絞り込み' + (n ? '（' + n + '）' : ''); b.classList.toggle('on', n > 0); }
+function renderFilterPanel() {
+  const el = document.getElementById('filter-panel'), f = ui.filter;
+  updateFilterBtn();
+  el.style.display = ui.filterOpen ? '' : 'none';
+  if (!ui.filterOpen) return;
+  const opt = (v, l, cur) => '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>';
+  const catOpts = '<optgroup label="支出">' + catsOf('expense').map(c => opt(c.name, c.name, f.category)).join('') + '</optgroup><optgroup label="収入">' + catsOf('income').filter(c => !catsOf('expense').some(x => x.name === c.name)).map(c => opt(c.name, c.name, f.category)).join('') + '</optgroup>';
+  el.innerHTML = '<div class="row2"><div class="field"><label>期間</label><select id="f-period" class="select" onchange="setFilter(\'period\', this.value)">' + opt('month', '表示中の月', f.period) + opt('all', '全期間', f.period) + opt('range', '日付を指定', f.period) + '</select></div>'
+    + '<div class="field"><label>種別</label><select id="f-type" class="select" onchange="setFilter(\'type\', this.value)">' + opt('', 'すべて', f.type) + opt('expense', '支出', f.type) + opt('income', '収入', f.type) + opt('transfer', '振替', f.type) + '</select></div></div>'
+    + (f.period === 'range' ? '<div class="row2"><div class="field"><label>開始日</label><input id="f-from" class="input" type="date" value="' + esc(f.from) + '" onchange="setFilter(\'from\', this.value)"></div><div class="field"><label>終了日</label><input id="f-to" class="input" type="date" value="' + esc(f.to) + '" onchange="setFilter(\'to\', this.value)"></div></div>' : '')
+    + '<div class="row2"><div class="field"><label>分類</label><select id="f-cat" class="select" onchange="setFilter(\'category\', this.value)">' + opt('', 'すべて', f.category) + catOpts + '</select></div>'
+    + '<div class="field"><label>支払方法・口座</label><select id="f-acc" class="select" onchange="setFilter(\'account\', this.value)">' + opt('', 'すべて', f.account) + db.accounts.map(a => opt(a.name, a.name, f.account)).join('') + '</select></div></div>'
+    + (db.members.length ? '<div class="field"><label>使った人</label><select id="f-person" class="select" onchange="setFilter(\'person\', this.value)">' + opt('', 'すべて', f.person) + db.members.map(m => opt(m, m, f.person)).join('') + opt('-', '（指定なし）', f.person) + '</select></div>' : '')
+    + '<div class="row2"><div class="field"><label>金額（以上）</label><input id="f-min" class="input num" type="text" inputmode="numeric" placeholder="下限なし" value="' + esc(f.min) + '" oninput="setFilter(\'min\', this.value)"></div>'
+    + '<div class="field"><label>金額（以下）</label><input id="f-max" class="input num" type="text" inputmode="numeric" placeholder="上限なし" value="' + esc(f.max) + '" oninput="setFilter(\'max\', this.value)"></div></div>'
+    + '<div class="btn-row"><button class="btn secondary sm" onclick="clearFilter()">条件をクリア</button><button class="btn secondary sm" onclick="exportFiltered()">この結果をCSVで保存</button><button class="btn secondary sm" onclick="toggleFilter()">閉じる</button></div>';
+}
+// 検索語と絞り込み条件に合う明細と、対象期間の説明を返す
+function filteredEntries() {
+  const f = ui.filter;
+  const q = (document.getElementById('list-q').value || '').trim().toLowerCase();
+  let base, scope;
+  if (f.period === 'range') { base = db.entries.filter(e => (!f.from || e.date >= f.from) && (!f.to || e.date <= f.to)); scope = (f.from ? fmtDateJa(f.from) : '最初') + '〜' + (f.to ? fmtDateJa(f.to) : '最新'); }
+  else if (f.period === 'all') { base = db.entries; scope = '全期間'; }
+  else { base = entriesInMonth(ui.month); scope = fmtMonth(ui.month); }
+  const min = f.min === '' ? null : calcAmount(f.min), max = f.max === '' ? null : calcAmount(f.max);
+  const list = base.filter(e => (!q || entrySearchText(e).includes(q)) && (!f.type || e.type === f.type)
+    && (!f.category || (e.type !== 'transfer' && e.category === f.category)) && (!f.account || e.account === f.account || e.toAccount === f.account)
+    && (!f.person || (f.person === '-' ? !e.person : e.person === f.person))
+    && (min == null || e.amount >= min) && (max == null || e.amount <= max));
+  return { list, scope, active: !!q || filterCount() > 0 };
+}
+function exportFiltered() { const r = filteredEntries(); exportEntriesCsv(r.list, 'kakeibo_search'); }
 function renderList() {
   document.getElementById('acct-card').innerHTML = accountCardHtml();
-  const q = (document.getElementById('list-q').value || '').trim().toLowerCase();
-  const allPeriod = document.getElementById('list-all').checked && q;
-  const base = allPeriod ? db.entries : entriesInMonth(ui.month);
-  const list = q ? base.filter(e => entrySearchText(e).includes(q)) : base;
-  document.getElementById('list-summary').innerHTML = summaryTiles(allPeriod ? list : base);
+  updateFilterBtn();
+  const { list, scope, active } = filteredEntries();
+  document.getElementById('list-summary').innerHTML = summaryTiles(list);
   let note = '';
   let shown = list;
-  if (allPeriod) {
-    note = '<div class="small" style="margin-bottom:6px">全期間の検索結果: ' + list.length.toLocaleString() + '件' + (list.length > 300 ? '（新しい300件を表示）' : '') + '</div>';
+  if (active) {
+    note = '<div class="small" style="margin-bottom:6px">' + esc(scope) + 'の検索結果: ' + list.length.toLocaleString() + '件（上の合計は検索結果の合計）' + (list.length > 300 ? '・新しい300件を表示' : '') + '</div>';
     if (list.length > 300) shown = sortEntries(list).slice(0, 300);
   }
   document.getElementById('list-body').innerHTML = note + (shown.length ? groupedByDay(shown)
-    : '<div class="empty">' + (q ? '該当する明細がありません' : 'この月の入力はありません') + '</div>');
+    : '<div class="empty">' + (active ? '該当する明細がありません' : 'この月の入力はありません') + '</div>');
 }
 function accountCardHtml() {
   if (!db.accounts.length) return '';
@@ -1190,18 +1450,69 @@ function renderCalendar() {
   for (let ds = startDs, k = 0; ds <= endDs; ds = addDays(ds, 1), k++) {
     const d = Number(ds.slice(8)), wd = (first + k) % 7, t = byDay[ds];
     const mark = (k === 0 || d === 1) && startDay() !== 1 ? '<span class="m">' + Number(ds.slice(5, 7)) + '月</span> ' : '';
-    html += '<div class="cell' + (wd === 0 ? ' sun' : wd === 6 ? ' sat' : '') + (ds === today ? ' today' : '') + (ds === ui.selectedDay ? ' sel' : '') + '" onclick="selectDay(\'' + ds + '\')">'
-      + '<div class="d">' + mark + d + '</div>'
-      + (t && t.inc ? '<div class="ci num">+' + fmtCompact(t.inc) + '</div>' : '')
-      + (t && t.ex ? '<div class="ce num">' + fmtCompact(t.ex) + '</div>' : '')
+    html += '<div class="cell' + (wd === 0 ? ' sun' : wd === 6 ? ' sat' : '') + (ds === today ? ' today' : '') + (ds === ui.selectedDay ? ' sel' : '') + '" data-ds="' + ds + '" onclick="selectDay(\'' + ds + '\')">'
+      + '<div class="d">' + mark + d + '<span class="dw">' + diaryMark(ds) + '</span></div>'
+      + (t && t.inc ? '<div class="ci num" title="収入 ' + fmtYen(t.inc) + '">+' + fmtCompact(t.inc) + '</div>' : '')
+      + (t && t.ex ? '<div class="ce num" title="支出 ' + fmtYen(t.ex) + '">' + fmtCompact(t.ex) + '</div>' : '')
       + '</div>';
   }
   document.getElementById('cal-grid').innerHTML = html;
   const sel = ui.selectedDay;
   document.getElementById('cal-add-btn').style.display = sel ? '' : 'none';
-  document.getElementById('cal-day-title').textContent = sel ? fmtDateJa(sel) : '日付をタップすると明細を表示します';
+  document.getElementById('cal-day-title').textContent = sel ? fmtDateJa(sel) : '日付をタップすると明細と日記を表示します';
   const list = sel ? all.filter(e => e.date === sel) : [];
-  document.getElementById('cal-day-entries').innerHTML = sel ? (list.length ? list.map(entryRow).join('') : '<div class="small">入力はありません</div>') : '';
+  document.getElementById('cal-day-entries').innerHTML = sel ? (list.length ? list.map(entryRow).join('') : '<div class="small">入力はありません</div>') + diaryHtml(sel) : '';
+  document.getElementById('cal-weeks').innerHTML = weeksHtml(startDs, endDs, first, byDay);
+}
+// 週ごとの収支（カレンダーの行＝日曜始まりの週）
+function weeksHtml(startDs, endDs, first, byDay) {
+  const weeks = [];
+  let ds = startDs, k = 0;
+  while (ds <= endDs) {
+    const w = { from: ds, to: ds, inc: 0, ex: 0 };
+    do { const t = byDay[ds]; if (t) { w.inc += t.inc; w.ex += t.ex; } w.to = ds; ds = addDays(ds, 1); k++; } while (ds <= endDs && (first + k) % 7 !== 0);
+    weeks.push(w);
+  }
+  const md = x => Number(x.slice(5, 7)) + '/' + Number(x.slice(8));
+  const max = Math.max(1, ...weeks.map(w => w.ex));
+  return '<div class="card-title">週ごとの収支</div>' + weeks.map((w, i) =>
+    '<div class="week-row"><div class="wk-top"><span class="n">第' + (i + 1) + '週 <span class="small">' + md(w.from) + (w.from !== w.to ? '〜' + md(w.to) : '') + '</span></span>'
+    + '<span class="num">' + (w.inc ? '<span class="inc">+' + fmtYen(w.inc) + '</span> ' : '') + (w.ex ? '<span class="exp">-' + fmtYen(w.ex) + '</span>' : '<span class="muted">¥0</span>') + '</span></div>'
+    + '<div class="bar"><i style="width:' + (w.ex / max * 100) + '%;background:' + colorExp() + '"></i></div></div>').join('');
+}
+function diaryHtml(ds) {
+  const dy = db.diary[ds] || { w: '', t: '' };
+  return '<div class="diary"><div class="card-title" style="margin:14px 0 8px">日記</div>'
+    + '<div class="chips" style="margin-bottom:8px">' + WEATHERS.map(([k, ic, nm]) => '<button class="chip' + (dy.w === k ? ' on' : '') + '" onclick="setDiaryWeather(\'' + ds + '\', \'' + k + '\')">' + ic + ' ' + nm + '</button>').join('') + '</div>'
+    + '<textarea id="diary-text" class="input textarea" rows="3" placeholder="今日のできごと・買い物のメモなど" oninput="diaryTyping(\'' + ds + '\', this.value)" onchange="setDiaryText(\'' + ds + '\', this.value)">' + esc(dy.t) + '</textarea></div>';
+}
+function updateDiary(ds, patch) {
+  const v = sanitizeDiaryDay(Object.assign({}, db.diary[ds] || {}, patch));
+  if (v) db.diary[ds] = v; else delete db.diary[ds];
+  saveDb();
+}
+function setDiaryWeather(ds, w) {
+  const t = document.getElementById('diary-text');
+  const cur = db.diary[ds] || {};
+  updateDiary(ds, { w: cur.w === w ? '' : w, t: t ? t.value : cur.t });
+  renderCalendar();
+}
+function diaryMark(ds) {
+  const dy = db.diary[ds]; if (!dy) return '';
+  return (dy.w ? (WEATHERS.find(x => x[0] === dy.w) || [])[1] || '' : '') || (dy.t ? '✎' : '');
+}
+// 入力欄から離れたときに保存。他の日付へのタップを妨げないよう、該当日のマークだけ書き換える
+// 入力中も少し間を置いて保存する（入力欄から離れる前にアプリを閉じても消えないように）
+let diaryTimer = null;
+function diaryTyping(ds, t) {
+  clearTimeout(diaryTimer);
+  diaryTimer = setTimeout(() => { updateDiary(ds, { t }); const mk = document.querySelector('#cal-grid .cell[data-ds="' + ds + '"] .dw'); if (mk) mk.textContent = diaryMark(ds); }, 800);
+}
+function setDiaryText(ds, t) {
+  clearTimeout(diaryTimer);
+  updateDiary(ds, { t });
+  const mk = document.querySelector('#cal-grid .cell[data-ds="' + ds + '"] .dw'); if (mk) mk.textContent = diaryMark(ds);
+  toast('日記を保存しました');
 }
 function selectDay(ds) { ui.selectedDay = (ui.selectedDay === ds) ? null : ds; renderCalendar(); }
 
@@ -1241,10 +1552,11 @@ function monthReportHtml() {
     + '<button class="' + (type === 'expense' ? 'on exp' : '') + '" onclick="setReportType(\'expense\')">支出の内訳</button>'
     + '<button class="' + (type === 'income' ? 'on inc' : '') + '" onclick="setReportType(\'income\')">収入の内訳</button></div>';
   if (!rows.length) { return html + '<div class="small" style="text-align:center;padding:20px 0">この月の' + (type === 'income' ? '収入' : '支出') + 'はありません</div></div>'; }
-  html += '<div class="donut-wrap">' + donutSvg(rows, total, type) + '<div class="legend">';
+  const colors = chartColors(type, rows.map(r => r.name));
+  html += '<div class="donut-wrap">' + donutSvg(rows, total, type, colors) + '<div class="legend">';
   rows.forEach(r => {
     const pct = total ? Math.round(r.total / total * 1000) / 10 : 0;
-    const color = catColor(type, r.name);
+    const color = colors.get(r.name);
     const open = ui.reportOpen === r.name;
     const pd = r.total - (prevBy[r.name] || 0);
     html += '<div class="lrow" onclick="toggleReportOpen(this.dataset.n)" data-n="' + esc(r.name) + '">'
@@ -1256,8 +1568,26 @@ function monthReportHtml() {
     }
   });
   html += '</div></div><div class="hint">分類をタップすると項目ごとの内訳を表示します。</div></div>';
+  html += personCardHtml(all, type);
   html += trendCardHtml(type);
+  html += '<div class="btn-row" style="margin-bottom:14px"><button class="btn secondary sm" onclick="printReport(\'month\')">🖨 この月を印刷・PDF</button></div>';
   return html;
+}
+// 使った人別の合計（メンバー登録時のみ）
+function personTotals(list) {
+  const map = new Map(db.members.map(m => [m, 0])); let none = 0;
+  list.forEach(e => { if (e.person) map.set(e.person, (map.get(e.person) || 0) + e.amount); else none += e.amount; });
+  const rows = [...map.entries()].map(([name, v]) => ({ name, v }));
+  if (none) rows.push({ name: '（指定なし）', v: none });
+  return rows;
+}
+function personCardHtml(all, type) {
+  if (!db.members.length) return '';
+  const list = all.filter(e => e.type === type), total = list.reduce((s, e) => s + e.amount, 0);
+  const rows = personTotals(list), max = Math.max(1, ...rows.map(r => r.v));
+  return '<div class="card" id="person-card"><div class="card-title">使った人別の' + typeLabel(type) + '</div>' + rows.map(r =>
+    '<div class="week-row"><div class="wk-top"><span class="n">' + (r.name === '（指定なし）' ? '' : '👤 ') + esc(r.name) + '</span><span class="num">' + fmtYen(r.v) + ' <span class="small">' + (total ? Math.round(r.v / total * 100) : 0) + '%</span></span></div>'
+    + '<div class="bar"><i style="width:' + (r.v / max * 100) + '%;background:' + (type === 'income' ? colorInc() : colorExp()) + '"></i></div></div>').join('') + '</div>';
 }
 function trendCardHtml(type) {
   const cats = catsOf(type);
@@ -1268,22 +1598,25 @@ function trendCardHtml(type) {
     const v = entriesInMonth(ym).filter(e => e.type === type && (!sel || e.category === sel)).reduce((s, e) => s + e.amount, 0);
     months.push({ ym, v }); if (v > max) max = v;
   }
-  const W = 640, H = 200, padL = 8, padB = 24, top = 10, bw = (W - padL * 2) / 12;
+  const W = 640, H = 220, padL = 8, padB = 34, top = 10, bw = (W - padL * 2) / 12;
   const color = sel ? catColor(type, sel) : (type === 'income' ? colorInc() : colorExp());
   let svg = '<svg class="yearchart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(sel || typeLabel(type)) + 'の12か月の推移">';
   for (let g = 1; g <= 4; g++) { const y = top + (H - padB - top) * (1 - g / 4); svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--grid)" stroke-width="1"/>'; }
   months.forEach((x, i) => {
     const h = (H - padB - top) * x.v / max, x0 = padL + i * bw + 6, w = bw - 12;
     if (x.v) svg += '<rect x="' + x0 + '" y="' + (H - padB - h) + '" width="' + w + '" height="' + h + '" rx="3" fill="' + color + '" opacity="' + (x.ym === ui.month ? 1 : 0.7) + '"><title>' + fmtMonth(x.ym) + ' ' + fmtYen(x.v) + '</title></rect>';
-    svg += '<text x="' + (x0 + w / 2) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="11" style="fill:var(--muted)">' + Number(x.ym.slice(5)) + '月</text>';
+    svg += '<text x="' + (x0 + w / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="20" style="fill:var(--muted)">' + Number(x.ym.slice(5)) + '</text>';
   });
   svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '" style="stroke:var(--line)"/></svg>';
-  const avg = Math.round(months.reduce((s, x) => s + x.v, 0) / 12);
+  // 記録を始める前の月（0円）を平均に含めない
+  const firstYm = db.entries.length ? periodOf(db.entries.reduce((m, e) => (e.date < m ? e.date : m), db.entries[0].date)) : ui.month;
+  const counted = months.filter(x => x.ym >= firstYm && x.ym <= currentPeriod());
+  const avg = counted.length ? Math.round(counted.reduce((s, x) => s + x.v, 0) / counted.length) : 0;
   return '<div class="card"><div class="card-title"><span>' + typeLabel(type) + 'の推移（12か月）</span>'
     + '<select class="select" style="width:auto;padding:6px 28px 6px 10px;font-size:13px;border-radius:10px" onchange="ui.trendCat=this.value;renderReport()"><option value="">全体</option>' + cats.map(c => '<option value="' + esc(c.name) + '"' + (c.name === sel ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select></div>'
-    + svg + '<div class="small num">12か月平均 ' + fmtYen(avg) + '</div></div>';
+    + svg + '<div class="small num">月平均 ' + fmtYen(avg) + (counted.length < 12 ? '（記録のある' + counted.length + 'か月）' : '（12か月）') + '</div></div>';
 }
-function donutSvg(rows, total, type) {
+function donutSvg(rows, total, type, colors) {
   const R = 80, r = 52, cx = 90, cy = 90;
   let angle = -Math.PI / 2, paths = '';
   rows.forEach(r0 => {
@@ -1298,7 +1631,7 @@ function donutSvg(rows, total, type) {
     const d = frac >= 0.9999
       ? 'M' + (cx + R) + ',' + cy + ' A' + R + ',' + R + ' 0 1 1 ' + (cx - R) + ',' + cy + ' A' + R + ',' + R + ' 0 1 1 ' + (cx + R) + ',' + cy + ' M' + (cx + r) + ',' + cy + ' A' + r + ',' + r + ' 0 1 0 ' + (cx - r) + ',' + cy + ' A' + r + ',' + r + ' 0 1 0 ' + (cx + r) + ',' + cy
       : 'M' + x1 + ',' + y1 + ' A' + R + ',' + R + ' 0 ' + large + ' 1 ' + x2 + ',' + y2 + ' L' + x3 + ',' + y3 + ' A' + r + ',' + r + ' 0 ' + large + ' 0 ' + x4 + ',' + y4 + ' Z';
-    paths += '<path d="' + d + '" fill="' + catColor(type, r0.name) + '" fill-rule="evenodd" style="stroke:var(--card)" stroke-width="2"><title>' + esc(r0.name) + ' ' + fmtYen(r0.total) + '</title></path>';
+    paths += '<path d="' + d + '" fill="' + colors.get(r0.name) + '" fill-rule="evenodd" style="stroke:var(--card)" stroke-width="2"><title>' + esc(r0.name) + ' ' + fmtYen(r0.total) + '</title></path>';
     angle = a2;
   });
   return '<svg class="donut" viewBox="0 0 180 180" role="img" aria-label="' + (type === 'income' ? '収入' : '支出') + 'の内訳">' + paths
@@ -1315,7 +1648,7 @@ function yearReportHtml() {
   }
   const tInc = months.reduce((s, x) => s + x.inc, 0), tEx = months.reduce((s, x) => s + x.ex, 0);
   const max = Math.max(1, ...months.map(x => Math.max(x.inc, x.ex)));
-  const W = 640, H = 220, padL = 8, padB = 24, top = 10;
+  const W = 640, H = 240, padL = 8, padB = 34, top = 10;
   const bw = (W - padL * 2) / 12;
   let svg = '<svg class="yearchart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + year + '年の月別収支">';
   for (let g = 1; g <= 4; g++) { const y = top + (H - padB - top) * (1 - g / 4); svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--grid)" stroke-width="1"/>'; }
@@ -1324,7 +1657,7 @@ function yearReportHtml() {
     const hI = (H - padB - top) * x.inc / max, hE = (H - padB - top) * x.ex / max;
     if (x.inc) svg += '<rect x="' + (x0 + gap) + '" y="' + (H - padB - hI) + '" width="' + w + '" height="' + hI + '" rx="3" fill="' + colorInc() + '"><title>' + x.m + '月 収入 ' + fmtYen(x.inc) + '</title></rect>';
     if (x.ex) svg += '<rect x="' + (x0 + gap * 2 + w) + '" y="' + (H - padB - hE) + '" width="' + w + '" height="' + hE + '" rx="3" fill="' + colorExp() + '"><title>' + x.m + '月 支出 ' + fmtYen(x.ex) + '</title></rect>';
-    svg += '<text x="' + (x0 + bw / 2) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="12" style="fill:var(--muted)">' + x.m + '月</text>';
+    svg += '<text x="' + (x0 + bw / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="20" style="fill:var(--muted)">' + x.m + '</text>';
   });
   svg += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '" style="stroke:var(--line)"/></svg>';
   let html = '<div class="summary">'
@@ -1343,15 +1676,63 @@ function yearReportHtml() {
   const rows = breakdown(months.flatMap(x => entriesInMonth(x.ym)).filter(e => e.type === 'expense'));
   if (rows.length) {
     html += '<div class="card"><div class="card-title">' + year + '年 分類別の支出</div>';
+    const colors = chartColors('expense', rows.map(r => r.name));
     rows.forEach(r => {
       const pct = tEx ? Math.round(r.total / tEx * 1000) / 10 : 0;
-      html += '<div class="lrow" style="cursor:default"><span class="dot" style="background:' + catColor('expense', r.name) + '"></span><span class="n">' + esc(r.name) + '</span><span class="p num">' + pct + '%</span><span class="a num">' + fmtYen(r.total) + '</span></div>';
+      html += '<div class="lrow" style="cursor:default"><span class="dot" style="background:' + colors.get(r.name) + '"></span><span class="n">' + esc(r.name) + '</span><span class="p num">' + pct + '%</span><span class="a num">' + fmtYen(r.total) + '</span></div>';
     });
     html += '</div>';
   }
+  html += '<div class="btn-row" style="margin-bottom:14px"><button class="btn secondary sm" onclick="printReport(\'year\')">🖨 この年を印刷・PDF</button></div>';
   return html;
 }
 function jumpMonth(ym) { ui.month = ym; setReportMode('month'); }
+
+/* ─── 印刷・PDF（印刷用の表を作ってブラウザの印刷を開く） ─── */
+function printTableBreakdown(list, total, budgets) {
+  const rows = breakdown(list);
+  if (!rows.length) return '<p>なし</p>';
+  let h = '<table><tr><th>分類 / 項目</th><th class="r">金額</th><th class="r">割合</th>' + (budgets ? '<th class="r">予算</th><th class="r">予算比</th>' : '') + '</tr>';
+  rows.forEach(r => {
+    const b = budgets ? budgets[r.name] || 0 : 0;
+    h += '<tr><td><b>' + esc(r.name) + '</b></td><td class="r">' + fmtYen(r.total) + '</td><td class="r">' + (total ? Math.round(r.total / total * 1000) / 10 : 0) + '%</td>'
+      + (budgets ? '<td class="r">' + (b ? fmtYen(b) : '—') + '</td><td class="r' + (b && r.total > b ? ' exp' : '') + '">' + (b ? Math.round(r.total / b * 100) + '%' : '—') + '</td>' : '') + '</tr>';
+    [...r.items.entries()].sort((a, b2) => b2[1] - a[1]).forEach(([k, v]) => { h += '<tr class="sub"><td>' + esc(k) + '</td><td class="r">' + fmtYen(v) + '</td><td></td>' + (budgets ? '<td></td><td></td>' : '') + '</tr>'; });
+  });
+  return h + '<tr class="total"><td>合計</td><td class="r">' + fmtYen(total) + '</td><td class="r">100%</td>' + (budgets ? '<td class="r">' + (budgets.__total ? fmtYen(budgets.__total) : '—') + '</td><td class="r">' + (budgets.__total ? Math.round(total / budgets.__total * 100) + '%' : '—') + '</td>' : '') + '</tr></table>';
+}
+function printSummary(inc, ex) {
+  return '<div class="sum3"><div>収入<b class="inc">' + fmtYen(inc) + '</b></div><div>支出<b class="exp">' + fmtYen(ex) + '</b></div><div>収支<b' + (inc - ex < 0 ? ' class="exp"' : '') + '>' + fmtYen(inc - ex) + '</b></div></div>';
+}
+function printReport(kind) {
+  const now = new Date();
+  const meta = '<div class="meta">作成日 ' + now.getFullYear() + '/' + (now.getMonth() + 1) + '/' + now.getDate() + '・家計簿アプリ</div>';
+  let html = '';
+  if (kind === 'year') {
+    const year = ui.month.slice(0, 4);
+    const months = []; for (let m = 1; m <= 12; m++) { const ym = year + '-' + pad2(m); const l = entriesInMonth(ym); months.push({ m, list: l, inc: sumBy(l, 'income'), ex: sumBy(l, 'expense') }); }
+    const all = months.flatMap(x => x.list), tInc = sumBy(all, 'income'), tEx = sumBy(all, 'expense');
+    html = '<h1>' + year + '年の家計簿</h1>' + meta + printSummary(tInc, tEx)
+      + '<h2>月別の収支</h2><table><tr><th>月</th><th class="r">収入</th><th class="r">支出</th><th class="r">収支</th></tr>'
+      + months.map(x => '<tr><td>' + x.m + '月</td><td class="r">' + fmtYen(x.inc) + '</td><td class="r">' + fmtYen(x.ex) + '</td><td class="r' + (x.inc - x.ex < 0 ? ' exp' : '') + '">' + fmtYen(x.inc - x.ex) + '</td></tr>').join('')
+      + '<tr class="total"><td>合計</td><td class="r">' + fmtYen(tInc) + '</td><td class="r">' + fmtYen(tEx) + '</td><td class="r">' + fmtYen(tInc - tEx) + '</td></tr></table>'
+      + '<h2>支出の内訳（分類別）</h2>' + printTableBreakdown(all.filter(e => e.type === 'expense'), tEx)
+      + '<h2>収入の内訳（分類別）</h2>' + printTableBreakdown(all.filter(e => e.type === 'income'), tInc);
+  } else {
+    const ym = ui.month, list = entriesInMonth(ym), inc = sumBy(list, 'income'), ex = sumBy(list, 'expense');
+    const b = db.budgets.overrides[ym] || db.budgets;
+    const budgets = Object.assign({ __total: b.total }, b.categories);
+    html = '<h1>' + fmtMonth(ym) + 'の家計簿</h1>' + (startDay() !== 1 ? '<div class="meta">期間 ' + fmtRange(ym) + '</div>' : '') + meta + printSummary(inc, ex)
+      + '<h2>支出の内訳（予算との比較）</h2>' + printTableBreakdown(list.filter(e => e.type === 'expense'), ex, budgets)
+      + '<h2>収入の内訳</h2>' + printTableBreakdown(list.filter(e => e.type === 'income'), inc)
+      + (db.members.length ? '<h2>使った人別</h2><table><tr><th>使った人</th><th class="r">支出</th><th class="r">収入</th></tr>' + personTotals(list.filter(e => e.type === 'expense')).map(r => '<tr><td>' + esc(r.name) + '</td><td class="r">' + fmtYen(r.v) + '</td><td class="r">' + fmtYen((personTotals(list.filter(e => e.type === 'income')).find(x => x.name === r.name) || { v: 0 }).v) + '</td></tr>').join('') + '</table>' : '')
+      + '<h2>明細（' + list.length + '件）</h2><table><tr><th>日付</th><th>種別</th><th>分類 / 項目</th><th>メモ・店名</th><th>口座</th><th class="r">金額</th></tr>'
+      + sortEntries(list).reverse().map(e => '<tr><td>' + Number(e.date.slice(5, 7)) + '/' + Number(e.date.slice(8)) + '</td><td>' + typeLabel(e.type) + '</td><td>' + esc(e.type === 'transfer' ? '振替' : e.category + (e.item ? ' / ' + e.item : '')) + '</td><td>' + esc([e.memo, e.store].filter(Boolean).join(' · ')) + '</td><td>' + esc(e.type === 'transfer' ? e.account + ' → ' + (e.toAccount || '') : [e.account, e.person ? '👤' + e.person : ''].filter(Boolean).join(' ')) + '</td><td class="r ' + (e.type === 'income' ? 'inc' : e.type === 'expense' ? 'exp' : '') + '">' + (e.type === 'income' ? '+' : e.type === 'expense' ? '-' : '') + fmtYen(e.amount) + '</td></tr>').join('')
+      + '</table>';
+  }
+  document.getElementById('print-area').innerHTML = html;
+  window.print();
+}
 
 /* ─── 予算 ───────────────────────────── */
 function renderBudget() {
@@ -1363,10 +1744,63 @@ function renderBudget() {
   let html = '<div class="card"><div class="card-title"><span>月の予算合計</span><span class="small">' + (ov ? 'この月のみ' : '毎月共通') + '</span></div>';
   html += budgetRow('__total', '支出合計', b.total, totalSpent, true);
   html += '<div class="check" style="margin-bottom:0"><input type="checkbox" id="budget-ov"' + (ov ? ' checked' : '') + ' onchange="toggleBudgetOverride(this.checked)"><label for="budget-ov">' + fmtMonth(ui.month) + 'だけ別の予算にする</label></div>';
-  html += '</div><div class="card"><div class="card-title">分類ごとの予算<span class="small">' + (ov ? 'この月のみ' : '毎月共通') + '</span></div>';
+  html += '</div>' + goalsCardHtml();
+  html += '<div class="card"><div class="card-title">分類ごとの予算<span class="small">' + (ov ? 'この月のみ' : '毎月共通') + '</span></div>';
   catsOf('expense').forEach(c => { html += budgetRow(c.name, c.name, b.categories[c.name] || 0, spent[c.name] || 0, false); });
   html += '<div class="hint">金額を入力すると自動で保存されます。空欄は予算なしです。' + (ov ? 'この月の予算は毎月共通の予算とは別に保存されます。' : '') + '</div></div>';
   document.getElementById('budget-body').innerHTML = html;
+}
+/* ─── 貯金目標 ───────────────────────── */
+function monthsBetween(a, b) { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); }
+function goalCurrent(g) { return g.account ? accountBalance(g.account) : g.saved; }
+function avgSurplus(n) {
+  let sum = 0; for (let i = 1; i <= n; i++) { const l = entriesInMonth(addMonths(currentPeriod(), -i)); sum += sumBy(l, 'income') - sumBy(l, 'expense'); }
+  return Math.round(sum / n);
+}
+function goalsCardHtml() {
+  let html = '<div class="card" id="goals-card"><div class="card-title"><span>貯金目標</span><button class="btn secondary sm" onclick="openGoal()">＋ 目標を追加</button></div>';
+  if (!db.goals.length) return html + '<div class="small">旅行・車・教育費など、目標額と期限を決めると、毎月いくら貯めればよいかを表示します。</div></div>';
+  const cur = currentPeriod(); let need = 0;
+  db.goals.forEach(g => {
+    const now = goalCurrent(g), remain = Math.max(0, g.target - now), ratio = Math.min(1, Math.max(0, now / g.target));
+    let pace = '';
+    if (remain <= 0) pace = '<span class="inc">🎉 達成しました</span>';
+    else if (g.deadline) {
+      const left = monthsBetween(cur, g.deadline) + 1;
+      if (left > 0) need += Math.ceil(remain / left);
+      pace = left > 0 ? fmtMonth(g.deadline) + 'まで残り' + left + 'か月 · 毎月 <b>' + fmtYen(Math.ceil(remain / left)) + '</b>' : '<span class="exp">期限（' + fmtMonth(g.deadline) + '）を過ぎています</span>';
+    } else pace = 'あと ' + fmtYen(remain);
+    html += '<div class="brow" onclick="openGoal(\'' + g.id + '\')" style="cursor:pointer"><div class="top"><span class="n">' + esc(g.name) + '</span><span class="num small">' + fmtYen(now) + ' / ' + fmtYen(g.target) + '</span></div>'
+      + '<div class="bar"><i class="' + (ratio >= 1 ? 'ok' : 'warn') + '" style="width:' + (ratio * 100) + '%"></i></div>'
+      + '<div class="sub"><span>' + Math.round(ratio * 100) + '%' + (g.account ? ' · ' + esc(g.account) + 'の残高' : '') + '</span><span class="num">' + pace + '</span></div></div>';
+  });
+  const avg = avgSurplus(3);
+  return html + '<div class="hint">' + (need ? '期限のある目標の合計で毎月 <b class="num">' + fmtYen(need) + '</b> が必要です（' + (avg >= need ? '<span class="inc">今のペースで間に合います</span>' : '<span class="exp">今のペースでは ' + fmtYen(need - Math.max(0, avg)) + '/月 足りません</span>') + '）。<br>' : '')
+    + '参考: 過去3か月の平均の月収支は <span class="num ' + (avg < 0 ? 'exp' : 'inc') + '">' + fmtYen(avg) + '</span> です。目標をタップすると編集できます。</div></div>';
+}
+function openGoal(id) {
+  const g = id ? db.goals.find(x => x.id === id) : { name: '', target: 0, deadline: '', account: '', saved: 0 };
+  if (!g) return;
+  openModal(id ? '貯金目標を編集' : '貯金目標を追加',
+    '<div class="field"><label>目標の名前</label><input id="m-g-name" class="input" value="' + esc(g.name) + '" placeholder="例: 家族旅行・車の買い替え"></div>'
+    + '<div class="row2"><div class="field"><label>目標額（円）</label><input id="m-g-target" class="input num" type="text" inputmode="numeric" value="' + (g.target ? g.target.toLocaleString() : '') + '"></div>'
+    + '<div class="field"><label>期限（任意）</label><input id="m-g-deadline" class="input" type="month" value="' + esc(g.deadline) + '"></div></div>'
+    + '<div class="field"><label>貯める口座（任意）</label><select id="m-g-account" class="select" onchange="document.getElementById(\'m-g-savedblock\').style.display = this.value ? \'none\' : \'\'"><option value="">（口座と連動しない）</option>' + db.accounts.map(a => '<option value="' + esc(a.name) + '"' + (a.name === g.account ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '</select></div>'
+    + '<div class="field" id="m-g-savedblock"' + (g.account ? ' style="display:none"' : '') + '><label>今貯まっている額（円）</label><input id="m-g-saved" class="input num" type="text" inputmode="numeric" value="' + (g.saved ? g.saved.toLocaleString() : '') + '"></div>'
+    + '<div class="hint">口座を選ぶと、その口座の残高を貯まった額として自動で使います（貯金用の口座へは「振替」で入金を記録します）。口座と連動しない場合は、今貯まっている額を手で更新してください。</div>'
+    + '<button class="btn" onclick="saveGoal(' + (id ? '\'' + id + '\'' : 'null') + ')">保存する</button>'
+    + (id ? '<button class="btn danger" onclick="deleteGoal(\'' + id + '\')">この目標を削除</button>' : ''));
+}
+function saveGoal(id) {
+  const g = sanitizeGoal({ id: id || uid(), name: document.getElementById('m-g-name').value, target: calcAmount(document.getElementById('m-g-target').value), deadline: document.getElementById('m-g-deadline').value, account: document.getElementById('m-g-account').value, saved: calcAmount(document.getElementById('m-g-saved').value) || 0 });
+  if (!g) { toast('目標の名前と目標額を入力してください'); return; }
+  const i = db.goals.findIndex(x => x.id === id);
+  if (i >= 0) db.goals[i] = g; else db.goals.push(g);
+  saveDb(); closeModal(); renderBudget(); toast('貯金目標を保存しました');
+}
+function deleteGoal(id) {
+  if (!confirm('この貯金目標を削除しますか？（明細や口座の残高は変わりません）')) return;
+  db.goals = db.goals.filter(x => x.id !== id); saveDb(); closeModal(); renderBudget();
 }
 function budgetRow(key, name, budget, used, isTotal) {
   const ratio = budget ? used / budget : 0;
@@ -1388,7 +1822,7 @@ function budgetRow(key, name, budget, used, isTotal) {
     + '<span class="num ' + (budget && used > budget ? 'exp' : '') + '">' + (budget ? (used > budget ? fmtYen(used - budget) + ' 超過' : pace || '残り ' + fmtYen(budget - used)) : '') + '</span></div></div>';
 }
 function setBudget(key, val) {
-  const n = parseAmount(val);
+  const n = calcAmount(val);
   const v = n == null ? 0 : Math.abs(n);
   const b = db.budgets.overrides[ui.month] || db.budgets;
   if (key === '__total') b.total = v;
@@ -1459,10 +1893,32 @@ function renderSettings() {
       + (cryptoOk() ? (db.settings.encrypt ? '<button class="btn secondary sm" onclick="openPinModal(\'decrypt\')">暗号化をやめる</button>' : '<button class="btn secondary sm" onclick="openPinModal(\'encrypt\')">データを暗号化する</button>') : '')
     : '<button class="btn secondary sm" onclick="openPinModal(\'set\')">暗証番号を設定</button>';
 
+  if (!db.entries.length) document.getElementById('fold-import').open = true; // 使い始めは移行の欄を開いておく
+  renderStorageUsage();
+  document.getElementById('member-list').innerHTML = db.members.map((m, i) => '<div class="cat-item"><div class="n">👤 ' + esc(m) + ' <span class="small">（' + db.entries.filter(e => e.person === m).length + '件）</span></div>'
+    + '<button class="icon-btn" title="名前を変更" onclick="renameMember(' + i + ')">✎</button><button class="icon-btn danger" title="削除" onclick="deleteMember(' + i + ')">×</button></div>').join('') || '<div class="small">登録されていません</div>';
   const dates = db.entries.map(e => e.date).sort();
   document.getElementById('stats-hint').textContent = db.entries.length
     ? '登録件数: ' + db.entries.length.toLocaleString() + '件（' + dates[0] + ' 〜 ' + dates[dates.length - 1] + '）'
     : '登録データはありません';
+}
+function addMember() {
+  const name = (prompt('使った人の名前（例: 自分・妻・子ども）') || '').trim().slice(0, 20);
+  if (!name) return;
+  if (db.members.includes(name)) { toast('同じ名前があります'); return; }
+  if (db.members.length >= 20) { toast('20人まで登録できます'); return; }
+  db.members.push(name); saveDb(); renderSettings();
+}
+function renameMember(i) {
+  const old = db.members[i]; const name = (prompt('新しい名前', old) || '').trim().slice(0, 20);
+  if (!name || name === old) return;
+  if (db.members.includes(name)) { toast('同じ名前があります'); return; }
+  db.members[i] = name; renameEverywhere('person', old, name); saveDb(); renderSettings(); toast('変更しました');
+}
+function deleteMember(i) {
+  const m = db.members[i]; const used = db.entries.filter(e => e.person === m).length;
+  if (!confirm('「' + m + '」を削除しますか？' + (used ? '\n（' + used + '件の明細の「使った人」は空になります）' : ''))) return;
+  db.members.splice(i, 1); renameEverywhere('person', m, null); saveDb(); renderSettings();
 }
 function addCategory() {
   const name = (prompt('新しい分類の名前') || '').trim();
@@ -1501,6 +1957,7 @@ function saveCategory(i) {
 function deleteCategory(i) {
   const cats = catsOf(ui.catType); const c = cats[i];
   const used = db.entries.filter(e => e.type === ui.catType && e.category === c.name).length;
+  if (c.name === 'その他' && used) { toast('「その他」は' + used + '件の明細で使われているため削除できません'); return; }
   if (used) {
     if (!confirm('「' + c.name + '」は' + used + '件の明細で使われています。削除すると、これらの明細は「その他」に変更されます。よろしいですか？')) return;
   } else if (!confirm('「' + c.name + '」を削除しますか？')) return;
@@ -1536,7 +1993,7 @@ function openRecurring(id) {
     + '<button class="btn" onclick="saveRecurring(' + (id ? '\'' + id + '\'' : 'null') + ')">保存する</button>');
 }
 function saveRecurring(id) {
-  const amount = parseAmount(document.getElementById('m-r-amount').value);
+  const amount = calcAmount(document.getElementById('m-r-amount').value);
   const day = Number(document.getElementById('m-r-day').value);
   const type = document.getElementById('m-r-type').value;
   const isTr = type === 'transfer';
@@ -1587,20 +2044,25 @@ function openEdit(id) {
     + '<div class="field"><label>項目</label><input id="m-e-item" class="input" value="' + esc(e.item) + '"></div></div>'
     + '<div class="row2" id="m-e-trblock"' + (isTr ? '' : ' style="display:none"') + '><div class="field"><label>振替元</label><select id="m-e-from" class="select">' + accountOptions(isTr ? e.account : accountNames()[0], false) + '</select></div>'
     + '<div class="field"><label>振替先</label><select id="m-e-to" class="select">' + accountOptions(e.toAccount || accountNames()[1] || accountNames()[0], false) + '</select></div></div>'
-    + '<div class="field"><label>金額（円）</label><input id="m-e-amount" class="input amount" type="text" inputmode="numeric" value="' + e.amount.toLocaleString() + '"></div>'
+    + '<div class="field"><label>金額（円）</label><div class="amt-wrap"><button type="button" class="calc-btn" onclick="openCalc(\'m-e-amount\')" aria-label="電卓で入力">🧮</button><input id="m-e-amount" class="input amount" type="text" inputmode="numeric" value="' + e.amount.toLocaleString() + '"></div></div>'
     + '<div class="row2"><div class="field"><label>メモ</label><input id="m-e-memo" class="input" value="' + esc(e.memo) + '"></div>'
     + '<div class="field" id="m-e-accblock"' + (isTr ? ' style="display:none"' : '') + '><label>支払方法・口座</label><select id="m-e-account" class="select">' + accountOptions(e.account, true) + '</select></div></div>'
-    + '<div class="field" id="m-e-storeblock"' + (isTr ? ' style="display:none"' : '') + '><label>店名</label><input id="m-e-store" class="input" value="' + esc(e.store || '') + '" placeholder="（任意）"></div>'
+    + '<div class="row2"><div class="field" id="m-e-storeblock"' + (isTr ? ' style="display:none"' : '') + '><label>店名</label><input id="m-e-store" class="input" value="' + esc(e.store || '') + '" placeholder="（任意）"></div>'
+    + (db.members.length || e.person ? '<div class="field" id="m-e-personblock"' + (isTr ? ' style="display:none"' : '') + '><label>使った人</label><select id="m-e-person" class="select">' + personOptions(e.person) + '</select></div>' : '') + '</div>'
     + (receiptN > 1 ? '<div class="hint">このレシート（' + esc(e.store || '店名なし') + '）には他に' + (receiptN - 1) + '件の明細があります。</div>' : '')
     + '<button class="btn" onclick="saveEdit(\'' + id + '\')">保存する</button>'
     + (isTr ? '' : '<button class="btn secondary" onclick="duplicateEntry(\'' + id + '\')">この内容を複製して入力</button>')
     + '<button class="btn danger" onclick="deleteEntry(\'' + id + '\')">この明細を削除</button>'
     + (receiptN > 1 ? '<button class="btn danger" onclick="deleteReceipt(\'' + esc(e.receiptId) + '\')">このレシートの明細' + receiptN + '件をまとめて削除</button>' : ''));
 }
+function personOptions(cur) {
+  const list = db.members.slice(); if (cur && !list.includes(cur)) list.push(cur);
+  return '<option value="">（指定なし）</option>' + list.map(m => '<option value="' + esc(m) + '"' + (m === cur ? ' selected' : '') + '>' + esc(m) + '</option>').join('');
+}
 function typeBlocksChanged(prefix, type) {
   const isTr = type === 'transfer';
   const show = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none'; };
-  show(prefix + '-catblock', !isTr); show(prefix + '-itemblock', !isTr); show(prefix + '-accblock', !isTr); show(prefix + '-storeblock', !isTr);
+  show(prefix + '-catblock', !isTr); show(prefix + '-itemblock', !isTr); show(prefix + '-accblock', !isTr); show(prefix + '-storeblock', !isTr); show(prefix + '-personblock', !isTr);
   show(prefix + '-trblock', isTr);
   if (!isTr) document.getElementById(prefix + '-cat').innerHTML = catOptions(type);
 }
@@ -1614,7 +2076,7 @@ function deleteReceipt(rid) {
 function saveEdit(id) {
   const e = db.entries.find(x => x.id === id);
   if (!e) return;
-  const amount = parseAmount(document.getElementById('m-e-amount').value);
+  const amount = calcAmount(document.getElementById('m-e-amount').value);
   const date = document.getElementById('m-e-date').value;
   if (!date) { toast('日付を入力してください'); return; }
   if (amount == null || amount === 0) { toast('金額を入力してください'); return; }
@@ -1626,13 +2088,15 @@ function saveEdit(id) {
   e.amount = Math.abs(amount);
   e.memo = document.getElementById('m-e-memo').value.trim();
   if (e.type === 'transfer') {
-    e.category = '振替'; e.item = ''; e.account = from; e.toAccount = to; delete e.store;
+    e.category = '振替'; e.item = ''; e.account = from; e.toAccount = to; delete e.store; delete e.person;
   } else {
     e.category = document.getElementById('m-e-cat').value || 'その他';
     e.item = document.getElementById('m-e-item').value.trim();
     e.account = document.getElementById('m-e-account').value;
     const store = document.getElementById('m-e-store').value.trim();
     if (store) e.store = store; else delete e.store;
+    const pe = document.getElementById('m-e-person');
+    if (pe) { if (pe.value) e.person = pe.value; else delete e.person; }
     delete e.toAccount;
     ensureCategory(e.type, e.category, e.item);
   }
@@ -1653,7 +2117,7 @@ function restoreEntries(list) {
 function duplicateEntry(id) {
   const e = db.entries.find(x => x.id === id); if (!e || e.type === 'transfer') return;
   closeModal();
-  fillInputForm({ type: e.type, category: e.category, item: e.item, amount: e.amount, memo: e.memo, account: e.account });
+  fillInputForm({ type: e.type, category: e.category, item: e.item, amount: e.amount, memo: e.memo, account: e.account, person: e.person || '' });
   showView('input');
   toast('内容を入力画面にコピーしました。日付と金額を確認して保存してください');
 }
@@ -1662,6 +2126,40 @@ function openModal(title, bodyHtml) {
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() { document.getElementById('modal').classList.remove('open'); importState = null; }
+
+/* ─── 電卓パレット ───────────────────── */
+let calcTarget = null, calcExpr = '';
+const CALC_KEYS = [['C', 'fn'], ['⌫', 'fn'], ['÷', 'op'], ['×', 'op'], ['7'], ['8'], ['9'], ['−', 'op'], ['4'], ['5'], ['6'], ['+', 'op'], ['1'], ['2'], ['3'], ['確定', 'ok'], ['0', 'wide'], ['00']];
+function openCalc(id) {
+  calcTarget = id;
+  const el = document.getElementById(id);
+  calcExpr = String(el.value || '').replace(/[,，]/g, '');
+  document.getElementById('calc-keys').innerHTML = CALC_KEYS.map(([k, c]) => '<button type="button" class="' + (c || '') + '" onclick="calcKey(this.dataset.k)" data-k="' + k + '">' + k + '</button>').join('');
+  document.getElementById('calc').classList.add('open');
+  renderCalc();
+}
+function closeCalc() { document.getElementById('calc').classList.remove('open'); calcTarget = null; }
+function renderCalc() {
+  document.getElementById('calc-ex').textContent = isExpr(calcExpr) ? calcExpr : '';
+  const v = calcAmount(calcExpr);
+  document.getElementById('calc-rs').textContent = calcExpr === '' ? '¥0' : v == null ? '…' : fmtYen(v);
+}
+function calcKey(k) {
+  const ops = '+−×÷';
+  if (k === 'C') calcExpr = '';
+  else if (k === '⌫') calcExpr = calcExpr.slice(0, -1);
+  else if (k === '確定') {
+    const v = calcAmount(calcExpr);
+    if (calcExpr !== '' && v == null) { toast('計算式を確認してください'); return; }
+    const el = document.getElementById(calcTarget);
+    if (el) { el.value = calcExpr === '' ? '' : String(v); el.dispatchEvent(new Event('input', { bubbles: true })); }
+    closeCalc(); return;
+  } else if (ops.includes(k)) {
+    if (calcExpr === '') return;
+    calcExpr = ops.includes(calcExpr.slice(-1)) ? calcExpr.slice(0, -1) + k : calcExpr + k;
+  } else calcExpr += k;
+  renderCalc();
+}
 
 /* ─── 値の解析 ───────────────────────── */
 function parseAmount(v) {
@@ -1675,6 +2173,26 @@ function parseAmount(v) {
   const n = Math.round(parseFloat(s));
   return neg ? -n : n;
 }
+// 金額欄の入力: 「1280+350」「3000×2」「1000÷3」などの計算式も受け付ける（CSV取り込みは parseAmount のまま）
+function normExpr(v) {
+  return toHalfWidth(String(v == null ? '' : v)).replace(/[,，¥￥円\s]/g, '').replace(/[×xX＊]/g, '*').replace(/[÷／]/g, '/').replace(/[−ー－]/g, '-').replace(/＋/g, '+');
+}
+function isExpr(v) { return /[\d.)][-+*/]/.test(normExpr(v)); }
+function evalExpr(src) {
+  const s = normExpr(src); let i = 0;
+  const peek = () => s[i];
+  function num() {
+    if (peek() === '(') { i++; const v = add(); if (peek() !== ')') throw 0; i++; return v; }
+    if (peek() === '-') { i++; return -num(); }
+    if (peek() === '+') { i++; return num(); }
+    const m = s.slice(i).match(/^\d+(\.\d+)?|^\.\d+/); if (!m) throw 0;
+    i += m[0].length; return parseFloat(m[0]);
+  }
+  function mul() { let v = num(); while (peek() === '*' || peek() === '/') { const op = s[i++]; const r = num(); if (op === '/' && r === 0) throw 0; v = op === '*' ? v * r : v / r; } return v; }
+  function add() { let v = mul(); while (peek() === '+' || peek() === '-') { const op = s[i++]; const r = mul(); v = op === '+' ? v + r : v - r; } return v; }
+  try { if (!s) return null; const v = add(); if (i !== s.length || !isFinite(v) || Math.abs(v) > 1e12) return null; return Math.round(v); } catch (e) { return null; }
+}
+function calcAmount(v) { return isExpr(v) ? evalExpr(v) : parseAmount(v); }
 function parseDate(v) {
   const s = toHalfWidth(String(v == null ? '' : v)).trim();
   let m = s.match(/^(\d{4})[\/\-.年]\s*(\d{1,2})[\/\-.月]\s*(\d{1,2})/);
@@ -1729,11 +2247,17 @@ const COL_RULES = {
   memo:     [/^メモ$|^備考$/, /メモ|備考|コメント|note|memo|remark/i],
   account:  [/^口座$|^支払方法$|^支払い方法$/, /口座|支払|決済|account|payment|wallet|財布/i],
   toAccount: [/^振替先$/, /振替先|入金口座|移動先|to_?account/i],
-  store:    [/^店名$|^店舗$/, /店名|店舗|お店|shop|store/i]
+  store:    [/^店名$|^店舗$|^お店$/, /店名|店舗|お店|shop|store/i],
+  product:  [/^品名$|^商品名$/, /品名|商品名/],
+  person:   [/^使った人$|^使用者$|^担当$/, /使った人|使用者|担当者|メンバー|^person$|^member$/i]
 };
 function guessColumns(header) {
   const map = {}; const used = new Set();
   const h = header.map(x => toHalfWidth(String(x)).trim());
+  // うきうき家計簿形式（日付・項目・内訳・品名・お店・収入・支出・口座・メモ）:
+  // うきうきの「項目」（食費など）→ 分類、「内訳」（お米など）→ 項目、「品名」→ メモの先頭に追加
+  const ki = h.indexOf('項目'), ui = h.indexOf('内訳');
+  if (ki >= 0 && ui >= 0 && !h.some(x => /^(大)?分類$|^カテゴリ$/.test(x))) { map.category = ki; map.item = ui; used.add(ki); used.add(ui); }
   for (let pass = 0; pass < 2; pass++) {
     for (const key in COL_RULES) {
       if (map[key] != null) continue;
@@ -1825,9 +2349,12 @@ function buildImportEntries() {
     let category = col(r, 'category'), item = col(r, 'item');
     if (!category && item) { category = item; item = ''; }
     if (!category) category = 'その他';
-    const entry = { date, type, category, item, amount, memo: col(r, 'memo'), account: col(r, 'account') };
+    const product = col(r, 'product'), memo0 = col(r, 'memo');
+    const memo = product && product !== item ? (memo0 ? product + ' / ' + memo0 : product) : memo0;
+    const entry = { date, type, category, item, amount, memo, account: col(r, 'account') };
     if (type === 'transfer') { entry.category = '振替'; entry.item = ''; entry.toAccount = col(r, 'toAccount') || item; }
     const store = col(r, 'store'); if (store) entry.store = store;
+    const person = col(r, 'person'); if (person && type !== 'transfer') entry.person = person.slice(0, 20);
     out.push(entry);
   });
   return { entries: out, bad };
@@ -1851,7 +2378,7 @@ function renderImportModal() {
     + '<div><label>1行目</label><select class="select" onchange="setImportOpt(\'hasHeader\', this.value === \'1\')"><option value="1"' + (s.hasHeader ? ' selected' : '') + '>見出し行</option><option value="0"' + (!s.hasHeader ? ' selected' : '') + '>データ行</option></select></div>'
     + '</div>';
   html += '<div class="card-title" style="margin-top:6px">列の割り当て</div><div class="map-grid">'
-    + colSel('date', '日付') + colSel('category', '分類') + colSel('item', '項目') + colSel('memo', 'メモ') + colSel('account', '支払方法・口座') + colSel('store', '店名')
+    + colSel('date', '日付') + colSel('category', '分類') + colSel('item', '項目') + colSel('memo', 'メモ') + colSel('product', '品名（メモに追加）') + colSel('account', '支払方法・口座') + colSel('store', '店名') + colSel('person', '使った人')
     + '<div><label>収支の判定</label><select class="select" onchange="setImportOpt(\'typeMode\', this.value)">'
     + [['column', '「収支」列で判定'], ['twocol', '収入列・支出列で判定'], ['category', '分類名から判定'], ['sign', '金額の符号（マイナス=支出）'], ['signrev', '金額の符号（マイナス=収入）'], ['expense', 'すべて支出'], ['income', 'すべて収入']]
       .map(([v, l]) => '<option value="' + v + '"' + (tm === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>'
@@ -1861,6 +2388,8 @@ function renderImportModal() {
   html += '<div class="card-title" style="margin-top:14px">プレビュー <span class="small">先頭5件</span></div><div class="preview"><table><tr><th>日付</th><th>収支</th><th>分類</th><th>項目</th><th>金額</th><th>メモ</th></tr>'
     + (preview.length ? preview.map(e => '<tr><td>' + e.date + '</td><td class="' + (e.type === 'income' ? 'inc' : e.type === 'transfer' ? '' : 'exp') + '">' + typeLabel(e.type) + '</td><td>' + esc(e.category) + '</td><td>' + esc(e.item) + '</td><td class="num">' + fmtYen(e.amount) + '</td><td>' + esc(e.memo) + '</td></tr>').join('')
       : '<tr><td colspan="6" class="bad">読み取れる行がありません。列の割り当てを確認してください。</td></tr>') + '</table></div>';
+  const trLike = built.entries.filter(e => e.type !== 'transfer' && /振替|口座移動|資金移動|チャージ/.test(e.category + ' ' + e.item)).length;
+  if (trLike) html += '<div class="hint">「振替」などの名前の行が' + trLike + '件あります。このファイルには振替先の列がないため、収入・支出として取り込まれます。取り込み後に明細を開いて種別を「振替」に変更できます。</div>';
   if (built.bad.length) html += '<div class="hint exp">読み取れない行: ' + built.bad.length + '件（例: ' + built.bad[0].line + '行目 ' + built.bad[0].reason + '）— これらは取り込まれません</div>';
   html += '<div class="check"><input type="checkbox" id="imp-dup"' + (s.skipDup ? ' checked' : '') + ' onchange="setImportOpt(\'skipDup\', this.checked)"><label for="imp-dup">登録済みと同じ内容の行はスキップ' + (dups ? '（' + dups + '件）' : '') + '</label></div>';
   html += '<button class="btn" onclick="runImport()"' + (willImport ? '' : ' disabled') + '>' + willImport.toLocaleString() + '件を取り込む</button>';
@@ -1875,6 +2404,7 @@ function runImport() {
     if (s.skipDup && existing.has(dupKey(e))) { skipped++; return; }
     if (e.type !== 'transfer') ensureCategory(e.type, e.category, e.item);
     ensureAccount(e.account); ensureAccount(e.toAccount);
+    if (e.person && !db.members.includes(e.person) && db.members.length < 20) db.members.push(e.person);
     const id = uid(); ids.push(id);
     db.entries.push(Object.assign({ id }, e));
     added++;
@@ -1905,16 +2435,33 @@ function downloadFile(name, content, mime) {
 }
 function csvCell(v) { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 function exportCsv(scope) {
-  const list = sortEntries(scope === 'month' ? entriesInMonth(ui.month) : db.entries).reverse();
+  exportEntriesCsv(scope === 'month' ? entriesInMonth(ui.month) : db.entries, 'kakeibo_' + (scope === 'month' ? ui.month : 'all'));
+}
+function exportEntriesCsv(entries, base) {
+  const list = sortEntries(entries).reverse();
   if (!list.length) { toast('書き出すデータがありません'); return; }
-  const lines = [['日付', '収支', '分類', '項目', '金額', 'メモ', '支払方法', '振替先', '店名']];
-  list.forEach(e => lines.push([e.date.replace(/-/g, '/'), typeLabel(e.type), e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '']));
+  const lines = [['日付', '収支', '分類', '項目', '金額', 'メモ', '支払方法', '振替先', '店名', '使った人']];
+  list.forEach(e => lines.push([e.date.replace(/-/g, '/'), typeLabel(e.type), e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '', e.person || '']));
   const csv = '﻿' + lines.map(r => r.map(csvCell).join(',')).join('\r\n');
-  downloadFile('kakeibo_' + (scope === 'month' ? ui.month : 'all') + '.csv', csv, 'text/csv;charset=utf-8');
+  downloadFile(base + '.csv', csv, 'text/csv;charset=utf-8');
 }
 function exportJson() {
   downloadFile('kakeibo_backup_' + todayStr() + '.json', JSON.stringify(Object.assign({ exportedAt: new Date().toISOString() }, db), null, 1), 'application/json');
   db.settings.lastBackupAt = Date.now(); saveDb(true); renderBackupNote();
+}
+// 保存容量の使用量（文字数×2バイトで多めに見積もる。ブラウザの上限は約5MB）
+const STORAGE_LIMIT = 5 * 1024 * 1024;
+function storageUsage() {
+  let n = 0;
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kakeibo')) n += (k.length + (localStorage.getItem(k) || '').length) * 2; } } catch (e) {}
+  return { bytes: n, ratio: n / STORAGE_LIMIT };
+}
+function fmtBytes(n) { return n >= 1024 * 1024 ? (Math.round(n / 1024 / 1024 * 10) / 10) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+function renderStorageUsage() {
+  const el = document.getElementById('storage-usage'); if (!el) return;
+  const u = storageUsage(), pct = Math.round(u.ratio * 100);
+  el.innerHTML = '保存容量: 約' + fmtBytes(u.bytes) + '使用（ブラウザの上限 約5MB の ' + pct + '%）'
+    + (u.ratio >= 0.7 ? '<br><span class="exp">上限に近づいています。JSONバックアップを保存し、スプレッドシート同期の設定をおすすめします。上限を超えると新しい入力が保存できなくなります。</span>' : '');
 }
 function renderBackupNote() {
   const el = document.getElementById('backup-note'); if (!el) return;
@@ -1922,15 +2469,27 @@ function renderBackupNote() {
   const last = db.settings.lastBackupAt || 0;
   const oldest = db.entries.length ? Math.min(...db.entries.map(e => new Date(e.date).getTime())) : Date.now();
   const need = db.entries.length >= 20 && !syncConfigured() && (last ? Date.now() - last > 30 * DAY : Date.now() - oldest > 30 * DAY);
-  el.innerHTML = need ? '<div class="note" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span>' + (last ? '最後のバックアップから30日以上経っています。' : 'バックアップがまだ保存されていません。') + 'データはこの端末のブラウザ内にだけあります。</span><button class="btn secondary sm" onclick="exportJson()">保存</button></div>' : '';
+  const full = storageUsage().ratio >= 0.7;
+  el.innerHTML = need || full ? '<div class="note" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span>'
+    + (full ? '<span class="exp">保存容量が上限の' + Math.round(storageUsage().ratio * 100) + '%に達しています。</span>' : '')
+    + (need ? (last ? '最後のバックアップから30日以上経っています。' : 'バックアップがまだ保存されていません。') + 'データはこの端末のブラウザ内にだけあります。' : 'バックアップを保存してください。')
+    + '</span><button class="btn secondary sm" onclick="exportJson()">保存</button></div>' : '';
 }
 function onRestoreFile(input) {
   const file = input.files && input.files[0]; input.value = '';
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     let data;
     try { data = JSON.parse(reader.result); } catch (e) { alert('JSONファイルとして読み込めませんでした'); return; }
+    // 暗号化された端末から救出画面で保存したファイル: 暗証番号で復号してから読み込む
+    if (isEnvelope(data)) {
+      if (!cryptoOk()) { alert('このブラウザ（またはhttp接続）では暗号化されたファイルを読めません。httpsで開いてください'); return; }
+      const pin = prompt('このファイルは暗号化されています。暗号化したときの暗証番号を入力してください');
+      if (!pin) return;
+      try { data = await decryptJson(data, await deriveKey(pin, data.salt)); }
+      catch (e) { alert('暗証番号が違うか、ファイルが壊れています'); return; }
+    }
     if (!data || !Array.isArray(data.entries)) { alert('家計簿のバックアップファイルではないようです'); return; }
     const n = data.entries.length;
     const mode = db.entries.length
@@ -1945,6 +2504,7 @@ function onRestoreFile(input) {
       inc.categories.expense.forEach(c => { ensureCategory('expense', c.name); c.items.forEach(it => ensureCategory('expense', c.name, it)); });
       inc.categories.income.forEach(c => { ensureCategory('income', c.name); c.items.forEach(it => ensureCategory('income', c.name, it)); });
       inc.accounts.forEach(a => ensureAccount(a.name));
+      for (const k in inc.diary) if (!db.diary[k]) db.diary[k] = inc.diary[k];
       toast(added + '件を追加しました');
     }
     saveDb(); render();
@@ -2023,7 +2583,7 @@ function postCardPayments() {
 }
 function saveAccount(id) {
   const name = document.getElementById('m-a-name').value.trim();
-  const initial = parseAmount(document.getElementById('m-a-initial').value) || 0;
+  const initial = calcAmount(document.getElementById('m-a-initial').value) || 0;
   if (!name) { toast('口座名を入力してください'); return; }
   if (db.accounts.some(a => a.name === name && a.id !== id)) { toast('同じ名前の口座があります'); return; }
   if (id) {
@@ -2174,6 +2734,7 @@ function openReceipt() {
   receipt = {
     date: document.getElementById('in-date').value || todayStr(), store: '', memo: '',
     account: document.getElementById('in-account').value || '',
+    person: db.members.length ? (ui.entryPerson || '') : '',
     lines: [{ category: cats[0] ? cats[0].name : 'その他', item: '', amount: '' }],
     total: '', ocrText: '', status: ''
   };
@@ -2185,6 +2746,7 @@ function readReceiptForm() {
   receipt.store = document.getElementById('rc-store').value.trim();
   receipt.account = document.getElementById('rc-account').value;
   receipt.memo = document.getElementById('rc-memo').value.trim();
+  const rp = document.getElementById('rc-person'); if (rp) receipt.person = rp.value;
   receipt.total = document.getElementById('rc-total').value;
   document.querySelectorAll('#rc-lines .rc-line').forEach((row, i) => {
     const l = receipt.lines[i]; if (!l) return;
@@ -2200,6 +2762,7 @@ function renderReceiptModal() {
     + '<div class="field"><label>店名</label><input id="rc-store" class="input" value="' + esc(r.store) + '" placeholder="例: ○○スーパー"></div></div>'
     + '<div class="row2"><div class="field"><label>支払方法・口座</label><select id="rc-account" class="select">' + accountOptions(r.account, true) + '</select></div>'
     + '<div class="field"><label>メモ</label><input id="rc-memo" class="input" value="' + esc(r.memo) + '"></div></div>'
+    + (db.members.length ? '<div class="field"><label>使った人</label><select id="rc-person" class="select">' + personOptions(r.person) + '</select></div>' : '')
     + '<div class="btn-row" style="margin-bottom:6px">' + catBtn + '</div>'
     + '<div id="ocr-status" class="ocr-status">' + esc(r.status) + '</div>'
     + (r.ocrText ? '<details><summary class="small">読み取ったテキストを表示</summary><div class="ocr-text">' + esc(r.ocrText) + '</div></details>' : '')
@@ -2222,9 +2785,9 @@ function renderReceiptModal() {
 }
 function updateReceiptSum() {
   let sum = 0;
-  document.querySelectorAll('#rc-lines .rc-amt').forEach(el => { const v = parseAmount(el.value); if (v) sum += v; });
+  document.querySelectorAll('#rc-lines .rc-amt').forEach(el => { const v = calcAmount(el.value); if (v) sum += v; });
   document.getElementById('rc-sum').textContent = fmtYen(sum);
-  const total = parseAmount(document.getElementById('rc-total').value);
+  const total = calcAmount(document.getElementById('rc-total').value);
   const diff = document.getElementById('rc-diff');
   if (total == null) { diff.textContent = ''; return; }
   const d = sum - total;
@@ -2247,12 +2810,12 @@ function saveReceipt() {
   readReceiptForm();
   const r = receipt;
   if (!r.date) { toast('日付を入力してください'); return; }
-  const lines = r.lines.map(l => ({ category: l.category || 'その他', item: l.item, amount: parseAmount(l.amount) })).filter(l => l.amount && l.amount > 0);
+  const lines = r.lines.map(l => ({ category: l.category || 'その他', item: l.item, amount: calcAmount(l.amount) })).filter(l => l.amount && l.amount > 0);
   if (!lines.length) { toast('金額を入力した明細がありません'); return; }
   const receiptId = uid();
   lines.forEach(l => {
     ensureCategory('expense', l.category, l.item);
-    db.entries.push({ id: uid(), date: r.date, type: 'expense', category: l.category, item: l.item, amount: l.amount, memo: r.memo, account: r.account, store: r.store || undefined, receiptId });
+    db.entries.push({ id: uid(), date: r.date, type: 'expense', category: l.category, item: l.item, amount: l.amount, memo: r.memo, account: r.account, store: r.store || undefined, receiptId, person: r.person || undefined });
   });
   saveDb(); closeModal(); receipt = null;
   document.getElementById('in-date').value = r.date;
@@ -2412,12 +2975,14 @@ function parseReceiptText(text) {
 /* ─── スプレッドシート同期 ───────────── */
 const SNAP_KEY = 'kakeibo.syncsnap.v1';
 let syncing = false, syncTimer = null, syncPending = false;
-function entryHash(e) { return JSON.stringify([e.date, e.type, e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '', e.receiptId || '', e.ruleId || '', e.ruleMonth || '', e.autoPay || '']); }
-const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay'];
+// 使った人がない明細は従来と同じハッシュになる（既存の明細を再送しないため）
+function entryHash(e) { const h = [e.date, e.type, e.category, e.item, e.amount, e.memo, e.account, e.toAccount || '', e.store || '', e.receiptId || '', e.ruleId || '', e.ruleMonth || '', e.autoPay || '']; if (e.person) h.push(e.person); return JSON.stringify(h); }
+const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members', 'goals'];
 function metaSection(k) { return k === 'startDay' ? db.settings.startDay : db[k]; }
 function metaHashes() { const h = {}; META_SECTIONS.forEach(k => { h[k] = JSON.stringify(metaSection(k)); }); return h; }
 function applyMetaSection(k, v) {
   if (k === 'startDay') { db.settings.startDay = normalizeDb({ settings: { startDay: v } }).settings.startDay; return; }
+  if (k === 'members') { db.members = sanitizeMembers(v); return; }
   const m = normalizeDb({ [k]: v, entries: [] });
   db[k] = m[k];
 }
@@ -2434,6 +2999,10 @@ function saveSnap(s) {
   if (db.settings.encrypt && encKey) return writeEncrypted(text, SNAP_KEY);
   try { localStorage.setItem(SNAP_KEY, text); } catch (e) {}
 }
+// 日記は明細と同じ仕組みで同期する（type 'diary'・日付ごとに固定のID）。GAS側の変更は不要
+const DIARY_PREFIX = 'diary-';
+function diaryRecords() { return Object.keys(db.diary).map(ds => ({ id: DIARY_PREFIX + ds, date: ds, type: 'diary', category: '', item: db.diary[ds].w, amount: 0, memo: db.diary[ds].t })); }
+function syncRecords() { return db.entries.concat(diaryRecords()); }
 function syncConfigured() { const c = db.settings.sync; return !!(c.url && c.key); }
 function setSyncOpt(k, v) {
   const c = db.settings.sync;
@@ -2448,7 +3017,8 @@ function renderSyncStatus(msg) {
   const c = db.settings.sync;
   if (msg) { el.textContent = msg; return; }
   if (!syncConfigured()) { el.textContent = '未設定'; return; }
-  el.textContent = (c.lastSyncAt ? '最終同期: ' + new Date(c.lastSyncAt).toLocaleString('ja-JP') : 'まだ同期していません') + (c.lastResult && c.lastResult !== 'ok' ? ' / ' + c.lastResult : '');
+  el.textContent = (c.lastSyncAt ? '最終同期: ' + new Date(c.lastSyncAt).toLocaleString('ja-JP') : 'まだ同期していません') + (c.lastResult && c.lastResult !== 'ok' ? ' / ' + c.lastResult : '')
+    + (c.lastSyncAt && c.serverVersion < 2 && (db.members.length || db.goals.length) ? ' / ⚠ スプレッドシート側のスクリプト（sync.gs）が古いため「使った人」と「貯金目標」は同期されません。READMEの手順で貼り替えてください' : '');
 }
 function scheduleSync() {
   if (!syncConfigured() || !db.settings.sync.auto) return;
@@ -2480,8 +3050,9 @@ async function syncNow(silent) {
   renderSyncStatus('同期中…');
   try {
     const snap = await loadSnap();
-    const changed = db.entries.filter(e => snap.entries[e.id] !== entryHash(e));
-    const current = new Set(db.entries.map(e => e.id));
+    const records = syncRecords();
+    const changed = records.filter(e => snap.entries[e.id] !== entryHash(e));
+    const current = new Set(records.map(e => e.id));
     const deleted = Object.keys(snap.entries).filter(id => !current.has(id));
     const hashes = metaHashes();
     const meta = {}; let metaChanged = false;
@@ -2494,21 +3065,35 @@ async function syncNow(silent) {
     const byId = new Map(db.entries.map(e => [e.id, e]));
     let received = 0;
     (json.entries || []).forEach(se => {
+      if (se && se.type === 'diary') {
+        const ds = String(se.date || ''), v = sanitizeDiaryDay({ w: se.item, t: se.memo });
+        if (String(se.id) === DIARY_PREFIX + ds && /^\d{4}-\d{2}-\d{2}$/.test(ds)) { if (v) db.diary[ds] = v; else delete db.diary[ds]; received++; }
+        return;
+      }
       const e = sanitizeEntry(se); if (!e) return;
       if (byId.has(e.id)) Object.assign(byId.get(e.id), e); else { db.entries.push(e); byId.set(e.id, e); }
       received++;
     });
     const delSet = new Set(json.deleted || []);
-    if (delSet.size) db.entries = db.entries.filter(e => !delSet.has(e.id));
+    if (delSet.size) {
+      db.entries = db.entries.filter(e => !delSet.has(e.id));
+      delSet.forEach(id => { id = String(id); if (id.startsWith(DIARY_PREFIX)) delete db.diary[id.slice(DIARY_PREFIX.length)]; });
+    }
     let metaReceived = false;
     if (json.meta && typeof json.meta === 'object') {
       META_SECTIONS.forEach(k => { if (k in json.meta) { applyMetaSection(k, json.meta[k]); metaReceived = true; } });
       if (metaReceived) db.entries.forEach(e => { [e.account, e.toAccount].forEach(n => ensureAccount(n)); });
     }
     dedupeGenerated();
+    // sync.gs を新しい版に貼り替えた直後: 古い版では保存されなかった「使った人」とメンバー一覧を送り直す
+    const prevVer = c.serverVersion || 0;
+    c.serverVersion = Number(json.version) || 1;
+    const upgraded = prevVer > 0 && prevVer < 2 && c.serverVersion >= 2;
     c.lastSyncAt = Number(json.serverTime) || Date.now();
     c.lastResult = 'ok';
-    saveSnap({ entries: Object.fromEntries(db.entries.map(e => [e.id, entryHash(e)])), metaHashes: metaHashes() });
+    const mh = metaHashes(); if (upgraded) { delete mh.members; delete mh.goals; }
+    saveSnap({ entries: Object.fromEntries(syncRecords().filter(e => !(upgraded && e.person)).map(e => [e.id, entryHash(e)])), metaHashes: mh });
+    if (upgraded) syncPending = true;
     saveDb(true);
     if (received || delSet.size || metaReceived) { ui.month = ui.month || currentPeriod(); render(); }
     renderSyncStatus();
@@ -2529,17 +3114,20 @@ function bootAfterLoad() {
   postRecurring();
   postCardPayments();
   showView('input');
+  presetAccount();
   initSync();
 }
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('in-date').value = todayStr();
   document.getElementById('in-amount').addEventListener('keydown', ev => { if (ev.key === 'Enter') saveEntry(); });
-  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeModal(); });
+  document.getElementById('in-amount').addEventListener('input', updateSaveLabel);
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { if (calcTarget) closeCalc(); else closeModal(); } });
   if (pendingEnvelope) {
     document.querySelector('#lock .small').textContent = 'データは暗号化されています。暗証番号を入力して開きます';
     showView('input');
   } else bootAfterLoad();
   initLock();
+  window.__kakeiboBooted = true; // 救出画面を出さない合図（ここまで来れば起動成功）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {

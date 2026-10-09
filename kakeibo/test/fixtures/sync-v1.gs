@@ -13,21 +13,15 @@
  *     「設定 → スプレッドシート同期」に貼り付ける
  *
  * 仕組み:
- *  - 「entries」シートに明細を1行1件で保存（削除は deleted=1 の印を付けて残す）。日記は type=diary の行
- *
- * 更新するとき: このファイルの内容で貼り替え、「デプロイ」→「デプロイを管理」→ 鉛筆アイコン →
- *   バージョン「新バージョン」→「デプロイ」（URL は変わりません）
+ *  - 「entries」シートに明細を1行1件で保存（削除は deleted=1 の印を付けて残す）
  *  - 「meta」シートに分類・口座・予算・定期収支などをセクションごとに JSON で保存
  *  - 端末から「前回同期以降に変わった明細」と「消した明細のID」を受け取り、
  *    サーバー側で前回同期以降に他の端末が変更したものは他端末の変更を優先する
  *  - 端末には「前回同期以降にサーバーで変わった明細」を返す
  */
 
-// 列は末尾にだけ追加する（既存のシートと列の位置を合わせるため）
-const COLS = ['id', 'date', 'type', 'category', 'item', 'amount', 'memo', 'account', 'toAccount', 'store', 'receiptId', 'ruleId', 'ruleMonth', 'autoPay', 'updatedAt', 'deleted', 'person'];
-const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members', 'goals'];
-// 家計簿アプリはこの値で「使った人」などに対応した版かを判断する
-const SYNC_VERSION = 2;
+const COLS = ['id', 'date', 'type', 'category', 'item', 'amount', 'memo', 'account', 'toAccount', 'store', 'receiptId', 'ruleId', 'ruleMonth', 'autoPay', 'updatedAt', 'deleted'];
+const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay'];
 
 // シートが日付や数値に自動変換した値を文字列に戻す
 function asText_(v) {
@@ -69,7 +63,7 @@ function doPost(e) {
       if (ex && ex.updatedAt > since) return; // 他端末が先に変更 → サーバー側を優先（応答で返す）
       const o = { id: id, date: String(ce.date || ''), type: String(ce.type || 'expense'), category: String(ce.category || ''), item: String(ce.item || ''),
         amount: Number(ce.amount) || 0, memo: String(ce.memo || ''), account: String(ce.account || ''), toAccount: String(ce.toAccount || ''),
-        store: String(ce.store || ''), receiptId: String(ce.receiptId || ''), ruleId: String(ce.ruleId || ''), ruleMonth: String(ce.ruleMonth || ''), autoPay: String(ce.autoPay || ''), updatedAt: now, deleted: 0, person: String(ce.person || '') };
+        store: String(ce.store || ''), receiptId: String(ce.receiptId || ''), ruleId: String(ce.ruleId || ''), ruleMonth: String(ce.ruleMonth || ''), autoPay: String(ce.autoPay || ''), updatedAt: now, deleted: 0 };
       rows.set(id, o); accepted.add(id); changedSheet = true;
     });
     (body.deleted || []).forEach(function (id) {
@@ -111,7 +105,7 @@ function doPost(e) {
       if (o.deleted) deleted.push(id);
       else { const c = {}; COLS.forEach(function (k) { if (k !== 'deleted' && o[k] !== '' && o[k] != null) c[k] = o[k]; }); entries.push(c); }
     });
-    return out_({ ok: true, version: SYNC_VERSION, serverTime: now, entries: entries, deleted: deleted, meta: metaOutAny ? metaOut : null });
+    return out_({ ok: true, serverTime: now, entries: entries, deleted: deleted, meta: metaOutAny ? metaOut : null });
   } catch (err) {
     return out_({ ok: false, error: String(err && err.message || err) });
   } finally {
@@ -120,7 +114,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return out_({ ok: true, version: SYNC_VERSION, message: 'kakeibo sync is running.' });
+  return out_({ ok: true, message: 'kakeibo sync is running.' });
 }
 
 function getSpreadsheet_(props) {
@@ -132,10 +126,7 @@ function getSpreadsheet_(props) {
 }
 function getSheet_(ss, name, header) {
   let sh = ss.getSheetByName(name);
-  if (!sh) { sh = ss.insertSheet(name); sh.getRange(1, 1, 1, header.length).setValues([header]); sh.setFrozenRows(1); return sh; }
-  // 列を追加した版に更新したとき、既存シートの見出し行を新しい列まで書き足す
-  const cur = sh.getRange(1, 1, 1, header.length).getValues()[0];
-  if (cur.join('\t') !== header.join('\t')) sh.getRange(1, 1, 1, header.length).setValues([header]);
+  if (!sh) { sh = ss.insertSheet(name); sh.getRange(1, 1, 1, header.length).setValues([header]); sh.setFrozenRows(1); }
   return sh;
 }
 function readMeta_(sh) {
