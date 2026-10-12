@@ -72,8 +72,9 @@ function loadGas(file, env) {
 }
 function start(port, opts) {
   opts = opts || {};
-  const env = createEnv(Object.assign({ SYNC_KEY: 'testkey', OCR_KEY: 'ocrkey', ANTHROPIC_API_KEY: 'sk-test' }, opts.props || {}));
-  const sync = loadGas(path.join(__dirname, '..', 'gas', 'sync.gs'), env);
+  // opts.env で既存のスプレッドシートを引き継ぎ、opts.syncFile で別の版の sync.gs を動かせる（貼り替えのテスト用）
+  const env = opts.env || createEnv(Object.assign({ SYNC_KEY: 'testkey', OCR_KEY: 'ocrkey', ANTHROPIC_API_KEY: 'sk-test' }, opts.props || {}));
+  const sync = loadGas(opts.syncFile || path.join(__dirname, '..', 'gas', 'sync.gs'), env);
   const ocr = loadGas(path.join(__dirname, '..', 'gas', 'receipt-ai.gs'), env);
   const server = http.createServer((req, res) => {
     const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
