@@ -138,7 +138,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('拒否された編集は反映されない', tp.type === 'expense' && tp.category === '日用品', JSON.stringify(tp));
 
     // ── レシート入力 ──
-    await page.click('button:has-text("レシートをまとめて入力")');
+    await page.click('#type-exp'); await page.click('#receipt-top-btn');
     await page.waitForSelector('#rc-lines');
     await page.fill('#rc-store', 'テストスーパー');
     await page.fill('#rc-lines .rc-item >> nth=0', 'キャベツ'); await page.fill('#rc-lines .rc-amt >> nth=0', '158');
@@ -448,7 +448,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.fill('#set-ocr-url', 'http://127.0.0.1:' + SYNC_PORT + '/ocr'); await page.press('#set-ocr-url', 'Tab');
     await page.fill('#set-ocr-key', 'wrongkey'); await page.press('#set-ocr-key', 'Tab');
     await page.click('[data-view=input]');
-    await page.click('button:has-text("レシートをまとめて入力")');
+    await page.click('#type-exp'); await page.click('#receipt-top-btn');
     await page.waitForSelector('#rc-lines');
     let [fcR] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=レシートを読み取る')]);
     await fcR.setFiles(pngPath); await wait(800);
@@ -457,7 +457,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await openSettings(page);
     await page.fill('#set-ocr-key', 'ocrkey'); await page.press('#set-ocr-key', 'Tab');
     await page.click('[data-view=input]');
-    await page.click('button:has-text("レシートをまとめて入力")');
+    await page.click('#type-exp'); await page.click('#receipt-top-btn');
     await page.waitForSelector('#rc-lines');
     [fcR] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=レシートを読み取る')]);
     await fcR.setFiles(pngPath); await wait(800);
@@ -654,6 +654,51 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('貯金目標: 口座と連動して残高を使う', gAcc.g === '銀行口座' && (await text(ux, '#goals-card')).includes(fmtYenT(gAcc.bal) + ' / ¥120,000'), JSON.stringify(gAcc) + (await text(ux, '#goals-card')));
     await ux.evaluate(() => { db.goals[0].account = ''; db.goals[0].saved = 130000; saveDb(true); renderBudget(); });
     check('貯金目標: 達成の表示', (await text(ux, '#goals-card')).includes('達成しました'));
+
+    // レシート入力（うきうき家計簿風）: 外税・軽減税率・値引き・品名の記憶・税額の手直し・レシート全体の編集
+    await ux.click('[data-view=input]'); await ux.click('#type-exp');
+    check('レシート入力ボタンが入力画面の上にある', await ux.isVisible('#receipt-top-btn') && (await ux.evaluate(() => document.getElementById('receipt-top-btn').getBoundingClientRect().top)) < 200);
+    await ux.click('#receipt-top-btn'); await ux.waitForSelector('#rc-lines');
+    await ux.fill('#rc-store', 'うきうきマート');
+    await ux.click('#rc-tax-out');
+    await ux.fill('#rc-lines .rc-item >> nth=0', 'レシート野菜'); await ux.selectOption('#rc-lines .rc-cat >> nth=0', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=0', 'change');
+    await ux.fill('#rc-lines .rc-amt >> nth=0', '158'); await ux.press('#rc-lines .rc-amt >> nth=0', 'Enter');
+    await ux.fill('#rc-lines .rc-item >> nth=1', 'レシート洗剤'); await ux.selectOption('#rc-lines .rc-cat >> nth=1', '日用品'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=1', 'change');
+    await ux.fill('#rc-lines .rc-amt >> nth=1', '398'); await ux.press('#rc-lines .rc-amt >> nth=1', 'Enter');
+    await ux.fill('#rc-lines .rc-item >> nth=2', 'レシート牛乳'); await ux.selectOption('#rc-lines .rc-cat >> nth=2', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=2', 'change');
+    await ux.fill('#rc-lines .rc-amt >> nth=2', '248');
+    await ux.click('text=－ 値引きの行'); await ux.fill('#rc-lines .rc-amt >> nth=3', '-30');
+    const rates = await ux.$$eval('#rc-lines .rc-rate', l => l.map(x => x.textContent));
+    const calcTxt = await text(ux, '#rc-calc');
+    // 8%対象: 158 + (248-30) = 376 → 税30、10%対象: 398 → 税39、合計 376+398+69 = 843
+    check('レシート: 行の追加・食費は8%・Enterで次の行', rates.join(',') === '8%,10%,8%,8%', rates.join(','));
+    check('レシート: 外税と値引きの計算', calcTxt.includes('8%対象 ¥376') && calcTxt.includes('税 ¥30') && calcTxt.includes('税 ¥39') && calcTxt.includes('¥843') && calcTxt.includes('値引き1件'), calcTxt);
+    await ux.fill('#rc-total', '843');
+    check('レシート: 合計の照合', (await text(ux, '#rc-diff')).includes('一致'));
+    await ux.click('button:has-text("まとめて保存する")'); await wait(100);
+    const saved = await ux.evaluate(() => db.entries.filter(e => e.store === 'うきうきマート').map(e => e.item + ':' + e.amount).sort().join(','));
+    // 税30を金額比で割り振り: 野菜158+12=170、牛乳218+17+端数1=236（端数は高い方へ）、洗剤398+39=437
+    check('レシート: 税込に割り振って保存', saved === 'レシート洗剤:437,レシート牛乳:236,レシート野菜:170', saved);
+    check('レシート: 品名は分類の項目ボタンに追加しない', !(await ux.evaluate(() => catsOf('expense').some(c => c.items.includes('レシート牛乳')))));
+    // 品名の記憶: 前回の分類と金額が出る
+    await ux.click('#receipt-top-btn'); await ux.waitForSelector('#rc-lines');
+    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '日用品');
+    await ux.fill('#rc-lines .rc-item >> nth=0', 'レシート牛乳'); await ux.dispatchEvent('#rc-lines .rc-item >> nth=0', 'change');
+    check('レシート: 品名から前回の分類と金額', (await ux.inputValue('#rc-lines .rc-cat >> nth=0')) === '食費' && (await ux.getAttribute('#rc-lines .rc-amt >> nth=0', 'placeholder')) === '前回236');
+    check('レシート: お店の候補', await ux.evaluate(() => [...document.querySelectorAll('#rc-stores option')].some(o => o.value === 'うきうきマート')));
+    // 税額を手で直す
+    await ux.click('#rc-tax-out'); await ux.fill('#rc-lines .rc-amt >> nth=0', '1000');
+    await ux.fill('#rc-tax', '79'); await ux.dispatchEvent('#rc-tax', 'change');
+    check('レシート: 税額の手直し', (await text(ux, '#rc-sum')) === '¥1,079', await text(ux, '#rc-sum'));
+    await ux.click('.modal-close');
+    // 保存したレシートを丸ごと編集
+    await ux.click('#day-entries .entry:has-text("レシート洗剤")'); await ux.waitForSelector('#modal.open');
+    await ux.click('text=このレシート全体を編集'); await ux.waitForSelector('#rc-lines');
+    check('レシート編集: 3品目を開き直す', (await ux.$$eval('#rc-lines .rc-line', l => l.length)) === 3 && (await ux.inputValue('#rc-store')) === 'うきうきマート');
+    await ux.fill('#rc-lines .rc-amt >> nth=0', '400');
+    await ux.click('button:has-text("レシートを保存し直す")'); await wait(100);
+    const edited = await ux.evaluate(() => { const l = db.entries.filter(e => e.store === 'うきうきマート'); return { n: l.length, ids: new Set(l.map(e => e.receiptId)).size, sum: l.reduce((s, e) => s + e.amount, 0) }; });
+    check('レシート編集: 置き換えて保存（件数・レシートIDはそのまま）', edited.n === 3 && edited.ids === 1 && edited.sum === 400 + 437 + 236, JSON.stringify(edited));
 
     // 日記は入力欄から離れなくても少し待てば保存される
     await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');
