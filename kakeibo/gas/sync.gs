@@ -24,10 +24,10 @@
  */
 
 // 列は末尾にだけ追加する（既存のシートと列の位置を合わせるため）
-const COLS = ['id', 'date', 'type', 'category', 'item', 'amount', 'memo', 'account', 'toAccount', 'store', 'receiptId', 'ruleId', 'ruleMonth', 'autoPay', 'updatedAt', 'deleted', 'person'];
-const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members', 'goals'];
+const COLS = ['id', 'date', 'type', 'category', 'item', 'amount', 'memo', 'account', 'toAccount', 'store', 'receiptId', 'ruleId', 'ruleMonth', 'autoPay', 'updatedAt', 'deleted', 'person', 'biz'];
+const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members', 'goals', 'companies'];
 // 家計簿アプリはこの値で「使った人」などに対応した版かを判断する
-const SYNC_VERSION = 2;
+const SYNC_VERSION = 3;
 
 // シートが日付や数値に自動変換した値を文字列に戻す
 function asText_(v) {
@@ -69,7 +69,7 @@ function doPost(e) {
       if (ex && ex.updatedAt > since) return; // 他端末が先に変更 → サーバー側を優先（応答で返す）
       const o = { id: id, date: String(ce.date || ''), type: String(ce.type || 'expense'), category: String(ce.category || ''), item: String(ce.item || ''),
         amount: Number(ce.amount) || 0, memo: String(ce.memo || ''), account: String(ce.account || ''), toAccount: String(ce.toAccount || ''),
-        store: String(ce.store || ''), receiptId: String(ce.receiptId || ''), ruleId: String(ce.ruleId || ''), ruleMonth: String(ce.ruleMonth || ''), autoPay: String(ce.autoPay || ''), updatedAt: now, deleted: 0, person: String(ce.person || '') };
+        store: String(ce.store || ''), receiptId: String(ce.receiptId || ''), ruleId: String(ce.ruleId || ''), ruleMonth: String(ce.ruleMonth || ''), autoPay: String(ce.autoPay || ''), updatedAt: now, deleted: 0, person: String(ce.person || ''), biz: String(ce.biz || '') };
       rows.set(id, o); accepted.add(id); changedSheet = true;
     });
     (body.deleted || []).forEach(function (id) {
