@@ -100,13 +100,15 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // ── お気に入り・履歴・複製 ──
     await page.click('#type-exp');
     await page.click('#in-cats .chip:nth-child(2)');
-    await page.fill('#in-item', 'トイレットペーパー'); await page.fill('#in-amount', '398');
+    check('入力画面: 項目の自由入力欄がない（選択式）', !(await page.$('#in-item')) && await page.isVisible('#in-product'));
+    await page.click('#in-items .chip:has-text("消耗品")');
+    await page.fill('#in-product', 'トイレットペーパー'); await page.fill('#in-amount', '398');
     await page.click('#fav-add-btn'); // prompt は自動で既定値を受け入れる
     await wait(100);
     check('お気に入り登録', (await text(page, '#fav-row')).includes('トイレットペーパー'));
-    await page.fill('#in-amount', ''); await page.fill('#in-item', '');
+    await page.fill('#in-amount', ''); await page.fill('#in-product', ''); await page.click('#in-items .chip:has-text("消耗品")');
     await page.click('#fav-row .chip');
-    check('お気に入りで入力欄が埋まる', (await page.inputValue('#in-amount')) === '398' && (await page.inputValue('#in-item')) === 'トイレットペーパー');
+    check('お気に入りで入力欄が埋まる', (await page.inputValue('#in-amount')) === '398' && (await page.inputValue('#in-product')) === 'トイレットペーパー' && (await text(page, '#in-items .chip.on')) === '消耗品');
     await page.click('#save-btn');
     await page.click('#view-input .entry:has-text("トイレットペーパー")');
     await page.waitForSelector('#modal.open');
@@ -114,7 +116,14 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await wait(100);
     check('明細の複製', (await page.inputValue('#in-amount')) === '398' && !(await page.isVisible('#modal.open')));
     await page.fill('#in-amount', '');
-    check('保存した項目が候補に出る', (await text(page, '#in-items')).includes('トイレットペーパー'));
+    check('商品名は候補に出て、項目には追加されない', (await page.$$eval('#product-history option', l => l.map(o => o.value))).includes('トイレットペーパー') && !(await text(page, '#in-items')).includes('トイレットペーパー'));
+    const tpSaved = await page.evaluate(() => db.entries.find(e => e.product === 'トイレットペーパー'));
+    check('保存: 項目と商品名を別々に記録', tpSaved && tpSaved.item === '消耗品' && tpSaved.category === '日用品', JSON.stringify(tpSaved));
+    // 項目をその場で追加（登録してから選ぶ）
+    await page.evaluate(() => { window.prompt = () => 'トイレ用品'; });
+    await page.click('#in-items .add-chip'); await wait(100);
+    check('入力画面: ＋項目を追加で分類に登録して選択', (await text(page, '#in-items .chip.on')) === 'トイレ用品' && await page.evaluate(() => catsOf('expense').find(c => c.name === '日用品').items.includes('トイレ用品')));
+    await page.click('#in-items .chip.on');
 
     // ── 削除の取り消し ──
     await page.click('#view-input .entry:has-text("トイレットペーパー")');
@@ -129,21 +138,25 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // ── 編集の検証エラーで明細が壊れない ──
     await page.click('#view-input .entry:has-text("トイレットペーパー")');
     await page.waitForSelector('#modal.open');
+    check('編集: 項目は選択式・商品名は入力欄', (await page.evaluate(() => document.getElementById('m-e-item').tagName)) === 'SELECT' && (await page.inputValue('#m-e-item')) === '消耗品' && (await page.inputValue('#m-e-product')) === 'トイレットペーパー');
+    await page.selectOption('#m-e-cat', '食費');
+    check('編集: 分類を変えると項目の選択肢が入れ替わる', (await page.$$eval('#m-e-item option', l => l.map(o => o.value).join(','))) === ',スーパー,外食,コンビニ,カフェ');
+    await page.selectOption('#m-e-cat', '日用品');
     await page.selectOption('#m-e-type', 'transfer');
     await page.selectOption('#m-e-from', '現金'); await page.selectOption('#m-e-to', '現金');
     await page.click('#modal-box button:has-text("保存する")'); await wait(100);
     check('不正な振替編集は拒否', await page.isVisible('#modal.open'));
     await page.click('.modal-close');
-    const tp = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.find(e => e.item === 'トイレットペーパー'));
-    check('拒否された編集は反映されない', tp.type === 'expense' && tp.category === '日用品', JSON.stringify(tp));
+    const tp = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.find(e => e.product === 'トイレットペーパー'));
+    check('拒否された編集は反映されない', tp.type === 'expense' && tp.category === '日用品' && tp.item === '消耗品', JSON.stringify(tp));
 
     // ── レシート入力 ──
     await page.click('#type-exp'); await page.click('#receipt-top-btn');
     await page.waitForSelector('#rc-lines');
     await page.fill('#rc-store', 'テストスーパー');
-    await page.fill('#rc-lines .rc-item >> nth=0', 'キャベツ'); await page.fill('#rc-lines .rc-amt >> nth=0', '158');
+    await page.fill('#rc-lines .rc-prod >> nth=0', 'キャベツ'); await page.fill('#rc-lines .rc-amt >> nth=0', '158');
     await page.click('button:has-text("＋ 行を追加")');
-    await page.fill('#rc-lines .rc-item >> nth=1', '牛乳'); await page.fill('#rc-lines .rc-amt >> nth=1', '248');
+    await page.fill('#rc-lines .rc-prod >> nth=1', '牛乳'); await page.fill('#rc-lines .rc-amt >> nth=1', '248');
     await page.fill('#rc-total', '406');
     check('レシート合計の照合', (await text(page, '#rc-diff')).includes('一致'));
     await page.click('button:has-text("まとめて保存する")');
@@ -335,11 +348,11 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('端末Bが分類の色（meta）を受信', (await pageB.getAttribute('#cat-list .cat-item >> nth=0 >> .cdot', 'style')).includes('#e34948'));
     // B で追加 → A で受信
     await pageB.click('[data-view=input]');
-    await pageB.fill('#in-amount', '777'); await pageB.fill('#in-memo', '端末Bから');
+    await pageB.fill('#in-amount', '777'); await pageB.fill('#in-memo', '端末Bから'); await pageB.fill('#in-product', 'B商品');
     await pageB.click('#save-btn');
     await wait(4800); // 自動同期（4秒デバウンス）
     await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
-    const hasB = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.some(e => e.memo === '端末Bから'));
+    const hasB = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.some(e => e.memo === '端末Bから' && e.product === 'B商品'));
     check('端末Aが端末Bの追加を受信', hasB);
     // A で削除 → B で反映
     await page.click('[data-view=list]');
@@ -363,12 +376,12 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.fill('.brow input >> nth=0', '333000'); await page.press('.brow input >> nth=0', 'Tab'); await wait(100);
     await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
     await pageB.click('[data-view=input]');
-    await pageB.fill('#in-amount', '120'); await pageB.fill('#in-item', 'ガム');
+    await pageB.fill('#in-amount', '120'); await pageB.fill('#in-product', 'ガム');
     await pageB.click('#fav-add-btn'); await wait(100);
     await openSettings(pageB); await pageB.click('text=今すぐ同期'); await wait(600);
-    const mergedB = await pageB.evaluate(ym => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); return { total: d.budgets.overrides[ym] ? d.budgets.overrides[ym].total : d.budgets.total, fav: d.favorites.some(f => f.item === 'ガム') }; }, thisYm);
+    const mergedB = await pageB.evaluate(ym => { const d = JSON.parse(localStorage.getItem('kakeibo.v1')); return { total: d.budgets.overrides[ym] ? d.budgets.overrides[ym].total : d.budgets.total, fav: d.favorites.some(f => f.product === 'ガム') }; }, thisYm);
     await page.click('text=今すぐ同期'); await wait(600);
-    const mergedA = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).favorites.some(f => f.item === 'ガム'));
+    const mergedA = await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).favorites.some(f => f.product === 'ガム'));
     check('設定のセクション別マージ（Bに予算が届きお気に入りも残る）', mergedB.total === 333000 && mergedB.fav, JSON.stringify(mergedB));
     check('設定のセクション別マージ（AにBのお気に入りが届く）', mergedA);
     // 使った人とメンバー一覧の同期（sync.gs の新しい列）
@@ -407,7 +420,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await pc.click('text=今すぐ同期'); await wait(800);
     const sheet = Object.values(oldGas.env.spreadsheets)[0].getSheetByName('entries');
     const hdr = sheet.rows[0], row = sheet.rows.find(r => r[0] === 'pv1');
-    check('貼り替え後に見出し行へ「person」「biz」列を追加', hdr.includes('person') && hdr[hdr.length - 1] === 'biz', hdr.join(','));
+    check('貼り替え後に見出し行へ「person」「biz」「product」列を追加', hdr.includes('person') && hdr.includes('biz') && hdr[hdr.length - 1] === 'product', hdr.join(','));
     check('貼り替え後に使った人を送り直す', row && row[hdr.indexOf('person')] === '妻' && !(await text(pc, '#sync-status')).includes('sync.gs'), JSON.stringify(row));
     const pd = await newPage(browser);
     await openSettings(pd);
@@ -462,7 +475,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     [fcR] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=レシートを読み取る')]);
     await fcR.setFiles(pngPath); await wait(800);
     const rcStore = await page.inputValue('#rc-store');
-    const rcItems = await page.$$eval('#rc-lines .rc-item', l => l.map(i => i.value));
+    const rcItems = await page.$$eval('#rc-lines .rc-prod', l => l.map(i => i.value));
     const rcTotal = await page.inputValue('#rc-total');
     check('AI読み取り: 結果が明細に反映', rcStore === 'モックスーパー' && rcItems.join(',') === 'キャベツ,牛乳' && rcTotal === '406', rcStore + '|' + rcItems + '|' + rcTotal);
     await page.click('.modal-close');
@@ -563,9 +576,9 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.click('button:has-text("件を取り込む")'); await ux.waitForSelector('#view-list.active');
     const uk = await ux.evaluate(() => db.entries.filter(e => e.date.startsWith('2025-0')).sort((a, b) => (a.date + a.amount < b.date + b.amount ? -1 : 1)));
     const rice = uk.find(e => e.amount === 2580), book = uk.find(e => e.amount === 1650), pay = uk.find(e => e.amount === 280000);
-    check('うきうき形式: 項目→分類・内訳→項目・品名→メモ・お店→店名',
-      rice && rice.category === '食費' && rice.item === 'お米' && rice.memo === 'コシヒカリ5kg' && rice.store === '○○スーパー' && rice.account === '現金' && rice.type === 'expense', JSON.stringify(rice));
-    check('うきうき形式: 引用符・カンマ入りの品名とメモ', book && book.memo === '家計簿の本, 第2版 / メモに "引用符" あり' && book.account === '楽天カード', JSON.stringify(book));
+    check('うきうき形式: 項目→分類・内訳→項目・品名→商品名・お店→店名',
+      rice && rice.category === '食費' && rice.item === 'お米' && rice.product === 'コシヒカリ5kg' && rice.memo === '' && rice.store === '○○スーパー' && rice.account === '現金' && rice.type === 'expense', JSON.stringify(rice));
+    check('うきうき形式: 引用符・カンマ入りの品名とメモ', book && book.product === '家計簿の本, 第2版' && book.memo === 'メモに "引用符" あり' && book.account === '楽天カード', JSON.stringify(book));
     check('うきうき形式: 収入列は収入として取り込み・口座を自動登録', pay && pay.type === 'income' && pay.category === '給料' && pay.memo === '4月分' && (await ux.evaluate(() => db.accounts.some(a => a.name === 'ゆうちょ銀行') && db.accounts.some(a => a.name === '楽天カード'))), JSON.stringify(pay));
     check('うきうき形式: 合計が一致', uk.length === 8 && uk.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0) === 2580 + 198 + 438 + 1650 + 85000 + 3300, String(uk.length));
     await openSettings(ux);
@@ -578,7 +591,8 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // 起動時の読み込み: 全種類のデータ（定期収支・カード・予算の上書き・お気に入り・日記）がある状態で開き直しても起動できる
     await openSettings(ux);
     await ux.click('text=＋ 定期収支を追加'); await ux.waitForSelector('#m-r-amount');
-    await ux.fill('#m-r-amount', '80000'); await ux.fill('#m-r-item', '家賃');
+    await ux.fill('#m-r-amount', '80000'); await ux.selectOption('#m-r-cat', '住居費'); await ux.selectOption('#m-r-item', '家賃');
+    check('定期収支: 項目は分類の登録項目から選ぶ', (await ux.$$eval('#m-r-item option', l => l.map(o => o.value).join(','))) === ',家賃,住宅ローン,管理費');
     await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
     await ux.evaluate(ym => {
       db.accounts.push({ id: uid(), name: 'テストカード', initial: 0, card: true, closingDay: 15, payDay: 10, payOffset: 1, payAccount: '銀行口座', payFrom: ym });
@@ -661,11 +675,12 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.click('#receipt-top-btn'); await ux.waitForSelector('#rc-lines');
     await ux.fill('#rc-store', 'うきうきマート');
     await ux.click('#rc-tax-out');
-    await ux.fill('#rc-lines .rc-item >> nth=0', 'レシート野菜'); await ux.selectOption('#rc-lines .rc-cat >> nth=0', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=0', 'change');
+    await ux.fill('#rc-lines .rc-prod >> nth=0', 'レシート野菜'); await ux.selectOption('#rc-lines .rc-cat >> nth=0', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=0', 'change');
+    await ux.selectOption('#rc-lines .rc-itemsel >> nth=0', 'スーパー');
     await ux.fill('#rc-lines .rc-amt >> nth=0', '158'); await ux.press('#rc-lines .rc-amt >> nth=0', 'Enter');
-    await ux.fill('#rc-lines .rc-item >> nth=1', 'レシート洗剤'); await ux.selectOption('#rc-lines .rc-cat >> nth=1', '日用品'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=1', 'change');
+    await ux.fill('#rc-lines .rc-prod >> nth=1', 'レシート洗剤'); await ux.selectOption('#rc-lines .rc-cat >> nth=1', '日用品'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=1', 'change');
     await ux.fill('#rc-lines .rc-amt >> nth=1', '398'); await ux.press('#rc-lines .rc-amt >> nth=1', 'Enter');
-    await ux.fill('#rc-lines .rc-item >> nth=2', 'レシート牛乳'); await ux.selectOption('#rc-lines .rc-cat >> nth=2', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=2', 'change');
+    await ux.fill('#rc-lines .rc-prod >> nth=2', 'レシート牛乳'); await ux.selectOption('#rc-lines .rc-cat >> nth=2', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=2', 'change');
     await ux.fill('#rc-lines .rc-amt >> nth=2', '248');
     await ux.click('text=－ 値引きの行'); await ux.fill('#rc-lines .rc-amt >> nth=3', '-30');
     const rates = await ux.$$eval('#rc-lines .rc-rate', l => l.map(x => x.textContent));
@@ -676,38 +691,43 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.fill('#rc-total', '843');
     check('レシート: 合計の照合', (await text(ux, '#rc-diff')).includes('一致'));
     await ux.click('button:has-text("まとめて保存する")'); await wait(100);
-    const saved = await ux.evaluate(() => db.entries.filter(e => e.store === 'うきうきマート').map(e => e.item + ':' + e.amount).sort().join(','));
+    const saved = await ux.evaluate(() => db.entries.filter(e => e.store === 'うきうきマート').map(e => e.product + ':' + e.amount).sort().join(','));
     // 税30を金額比で割り振り: 野菜158+12=170、牛乳218+17+端数1=236（端数は高い方へ）、洗剤398+39=437
     check('レシート: 税込に割り振って保存', saved === 'レシート洗剤:437,レシート牛乳:236,レシート野菜:170', saved);
+    check('レシート: 選んだ項目と商品名を別々に保存', await ux.evaluate(() => { const e = db.entries.find(x => x.product === 'レシート野菜'); return e && e.item === 'スーパー' && e.category === '食費'; }));
     check('レシート: 品名は分類の項目ボタンに追加しない', !(await ux.evaluate(() => catsOf('expense').some(c => c.items.includes('レシート牛乳')))));
     // 品名の記憶: 前回の分類と金額が出る
     await ux.click('#receipt-top-btn'); await ux.waitForSelector('#rc-lines');
     await ux.selectOption('#rc-lines .rc-cat >> nth=0', '日用品');
-    await ux.fill('#rc-lines .rc-item >> nth=0', 'レシート牛乳'); await ux.dispatchEvent('#rc-lines .rc-item >> nth=0', 'change');
+    await ux.fill('#rc-lines .rc-prod >> nth=0', 'レシート野菜'); await ux.dispatchEvent('#rc-lines .rc-prod >> nth=0', 'change');
+    check('レシート: 商品名から前回の分類・項目', (await ux.inputValue('#rc-lines .rc-cat >> nth=0')) === '食費' && (await ux.inputValue('#rc-lines .rc-itemsel >> nth=0')) === 'スーパー');
+    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '日用品');
+    await ux.fill('#rc-lines .rc-prod >> nth=0', 'レシート牛乳'); await ux.dispatchEvent('#rc-lines .rc-prod >> nth=0', 'change');
     check('レシート: 品名から前回の分類と金額', (await ux.inputValue('#rc-lines .rc-cat >> nth=0')) === '食費' && (await ux.getAttribute('#rc-lines .rc-amt >> nth=0', 'placeholder')) === '前回236');
     check('レシート: お店の候補', await ux.evaluate(() => [...document.querySelectorAll('#rc-stores option')].some(o => o.value === 'うきうきマート')));
-    // 項目の指定: 行の分類に登録された項目がチップと候補に出て、選ぶと分類はそのまま
-    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=0', 'change');
-    await ux.fill('#rc-lines .rc-item >> nth=0', '');
-    const chipTxt = await text(ux, '#rc-itemchips');
-    check('レシート: 行の分類の項目がチップで出る', chipTxt.includes('1行目（食費）の項目を選ぶ') && chipTxt.includes('スーパー') && chipTxt.includes('外食'), chipTxt);
-    await ux.click('#rc-itemchips .chip:has-text("スーパー")');
-    check('レシート: チップで項目を指定（分類は変わらない）', (await ux.inputValue('#rc-lines .rc-item >> nth=0')) === 'スーパー' && (await ux.inputValue('#rc-lines .rc-cat >> nth=0')) === '食費' && await ux.evaluate(() => document.activeElement.classList.contains('rc-amt')));
-    const dl0 = await ux.$$eval('#rc-items-0 option', l => l.map(o => o.value));
-    check('レシート: 候補は登録済みの項目が先頭', dl0[0] === 'スーパー' && dl0.includes('レシート牛乳'), dl0.slice(0, 6).join(','));
-    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '日用品'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=0', 'change');
-    const dl0b = await ux.$$eval('#rc-items-0 option', l => l.map(o => o.value));
-    check('レシート: 分類を変えると候補とチップが切り替わる', dl0b[0] === '消耗品' && (await text(ux, '#rc-itemchips')).includes('1行目（日用品）'), dl0b.slice(0, 4).join(','));
-    await ux.click('text=＋ 行を追加');
-    check('レシート: 追加した行の項目チップに切り替わる', (await text(ux, '#rc-itemchips')).includes('2行目（日用品）'));
-    await ux.click('#rc-itemchips .chip:has-text("ドラッグストア")');
-    check('レシート: 2行目に項目が入る', (await ux.inputValue('#rc-lines .rc-item >> nth=1')) === 'ドラッグストア' && (await ux.inputValue('#rc-lines .rc-item >> nth=0')) === 'スーパー');
-    await ux.click('#rc-lines .icon-btn.danger >> nth=1');
+    // 項目は分類に登録したものから選ぶ（選択式）。分類を変えると選択肢が入れ替わり、選んでいた項目は外れる
+    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '食費');
+    const opt0 = await ux.$$eval('#rc-lines .rc-line:nth-child(1) .rc-itemsel option', l => l.map(o => o.value).join(','));
+    const foodItems = await ux.evaluate(() => ',' + catsOf('expense').find(c => c.name === '食費').items.join(','));
+    check('レシート: 項目は選択式（分類の登録項目だけ）', opt0 === foodItems && opt0.startsWith(',スーパー,外食,コンビニ,カフェ') && !opt0.includes('レシート') && !(await ux.$('#rc-lines .rc-item')), opt0);
+    await ux.selectOption('#rc-lines .rc-itemsel >> nth=0', 'コンビニ');
+    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '日用品');
+    const opt0b = await ux.$$eval('#rc-lines .rc-line:nth-child(1) .rc-itemsel option', l => l.map(o => o.value).join(','));
+    const dailyItems = await ux.evaluate(() => ',' + catsOf('expense').find(c => c.name === '日用品').items.join(','));
+    check('レシート: 分類を変えると項目の選択肢が入れ替わる', opt0b === dailyItems && opt0b.startsWith(',消耗品,ドラッグストア') && (await ux.inputValue('#rc-lines .rc-itemsel >> nth=0')) === '', opt0b);
+    check('レシート: 商品名の候補', await ux.evaluate(() => [...document.querySelectorAll('#rc-products option')].some(o => o.value === 'レシート牛乳')));
     // 税額を手で直す
     await ux.click('#rc-tax-out'); await ux.fill('#rc-lines .rc-amt >> nth=0', '1000');
     await ux.fill('#rc-tax', '79'); await ux.dispatchEvent('#rc-tax', 'change');
     check('レシート: 税額の手直し', (await text(ux, '#rc-sum')) === '¥1,079', await text(ux, '#rc-sum'));
     await ux.click('.modal-close');
+    // 商品名の欄ができる前のレシート（項目に品名が入っている）は、商品名として表示・編集する
+    await ux.evaluate(() => { db.entries.push({ id: uid(), date: todayStr(), type: 'expense', category: '食費', item: '旧品名パン', amount: 150, memo: '', account: '', store: '旧店', receiptId: 'legacyrc' }); saveDb(true); render(); });
+    check('古いレシート: 一覧では品名を商品名として表示', (await text(ux, '#day-entries .entry:has-text("旧品名パン")')).includes('食費'));
+    await ux.evaluate(() => openReceiptEdit('legacyrc')); await ux.waitForSelector('#rc-lines');
+    check('古いレシート: 開き直すと商品名の欄に入り、項目は空', (await ux.inputValue('#rc-lines .rc-prod >> nth=0')) === '旧品名パン' && (await ux.inputValue('#rc-lines .rc-itemsel >> nth=0')) === '');
+    await ux.click('.modal-close');
+    await ux.evaluate(() => { db.entries = db.entries.filter(e => e.receiptId !== 'legacyrc'); saveDb(true); render(); });
     // 保存したレシートを丸ごと編集
     await ux.click('#day-entries .entry:has-text("レシート洗剤")'); await ux.waitForSelector('#modal.open');
     await ux.click('text=このレシート全体を編集'); await ux.waitForSelector('#rc-lines');
@@ -767,15 +787,15 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // レシートと定期収支にも区分
     await ux.click('[data-view=input]'); await ux.click('#type-exp'); await ux.click('#receipt-top-btn'); await ux.waitForSelector('#rc-biz');
     await ux.selectOption('#rc-biz', 'TNファシリティコンサルティング');
-    await ux.fill('#rc-lines .rc-item >> nth=0', '事業用文具'); await ux.fill('#rc-lines .rc-amt >> nth=0', '880');
+    await ux.fill('#rc-lines .rc-prod >> nth=0', '事業用文具'); await ux.fill('#rc-lines .rc-amt >> nth=0', '880');
     await ux.click('button:has-text("まとめて保存する")'); await wait(100);
-    check('事業: レシートに会社を付けて保存', (await ux.evaluate(() => (db.entries.find(e => e.item === '事業用文具') || {}).biz)) === 'TNファシリティコンサルティング');
+    check('事業: レシートに会社を付けて保存', (await ux.evaluate(() => (db.entries.find(e => e.product === '事業用文具') || {}).biz)) === 'TNファシリティコンサルティング');
     await openSettings(ux);
     await ux.click('text=＋ 定期収支を追加'); await ux.waitForSelector('#m-r-biz');
-    await ux.fill('#m-r-amount', '33000'); await ux.fill('#m-r-item', '事務所家賃'); await ux.fill('#m-r-day', '1');
+    await ux.fill('#m-r-amount', '33000'); await ux.selectOption('#m-r-cat', '住居費'); await ux.selectOption('#m-r-item', '家賃'); await ux.fill('#m-r-memo', '事務所家賃'); await ux.fill('#m-r-day', '1');
     await ux.selectOption('#m-r-biz', '株式会社明るい未来ラボ');
     await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
-    check('事業: 定期収支の自動入力にも会社', await ux.evaluate(() => { const l = db.entries.filter(e => e.item === '事務所家賃'); return l.length > 0 && l.every(e => e.biz === '株式会社明るい未来ラボ'); }));
+    check('事業: 定期収支の自動入力にも会社', await ux.evaluate(() => { const l = db.entries.filter(e => e.memo === '事務所家賃'); return l.length > 0 && l.every(e => e.biz === '株式会社明るい未来ラボ'); }));
 
     // 日記は入力欄から離れなくても少し待てば保存される
     await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');
