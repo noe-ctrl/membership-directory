@@ -686,6 +686,23 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.fill('#rc-lines .rc-item >> nth=0', 'レシート牛乳'); await ux.dispatchEvent('#rc-lines .rc-item >> nth=0', 'change');
     check('レシート: 品名から前回の分類と金額', (await ux.inputValue('#rc-lines .rc-cat >> nth=0')) === '食費' && (await ux.getAttribute('#rc-lines .rc-amt >> nth=0', 'placeholder')) === '前回236');
     check('レシート: お店の候補', await ux.evaluate(() => [...document.querySelectorAll('#rc-stores option')].some(o => o.value === 'うきうきマート')));
+    // 項目の指定: 行の分類に登録された項目がチップと候補に出て、選ぶと分類はそのまま
+    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '食費'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=0', 'change');
+    await ux.fill('#rc-lines .rc-item >> nth=0', '');
+    const chipTxt = await text(ux, '#rc-itemchips');
+    check('レシート: 行の分類の項目がチップで出る', chipTxt.includes('1行目（食費）の項目を選ぶ') && chipTxt.includes('スーパー') && chipTxt.includes('外食'), chipTxt);
+    await ux.click('#rc-itemchips .chip:has-text("スーパー")');
+    check('レシート: チップで項目を指定（分類は変わらない）', (await ux.inputValue('#rc-lines .rc-item >> nth=0')) === 'スーパー' && (await ux.inputValue('#rc-lines .rc-cat >> nth=0')) === '食費' && await ux.evaluate(() => document.activeElement.classList.contains('rc-amt')));
+    const dl0 = await ux.$$eval('#rc-items-0 option', l => l.map(o => o.value));
+    check('レシート: 候補は登録済みの項目が先頭', dl0[0] === 'スーパー' && dl0.includes('レシート牛乳'), dl0.slice(0, 6).join(','));
+    await ux.selectOption('#rc-lines .rc-cat >> nth=0', '日用品'); await ux.dispatchEvent('#rc-lines .rc-cat >> nth=0', 'change');
+    const dl0b = await ux.$$eval('#rc-items-0 option', l => l.map(o => o.value));
+    check('レシート: 分類を変えると候補とチップが切り替わる', dl0b[0] === '消耗品' && (await text(ux, '#rc-itemchips')).includes('1行目（日用品）'), dl0b.slice(0, 4).join(','));
+    await ux.click('text=＋ 行を追加');
+    check('レシート: 追加した行の項目チップに切り替わる', (await text(ux, '#rc-itemchips')).includes('2行目（日用品）'));
+    await ux.click('#rc-itemchips .chip:has-text("ドラッグストア")');
+    check('レシート: 2行目に項目が入る', (await ux.inputValue('#rc-lines .rc-item >> nth=1')) === 'ドラッグストア' && (await ux.inputValue('#rc-lines .rc-item >> nth=0')) === 'スーパー');
+    await ux.click('#rc-lines .icon-btn.danger >> nth=1');
     // 税額を手で直す
     await ux.click('#rc-tax-out'); await ux.fill('#rc-lines .rc-amt >> nth=0', '1000');
     await ux.fill('#rc-tax', '79'); await ux.dispatchEvent('#rc-tax', 'change');
