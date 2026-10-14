@@ -347,6 +347,9 @@
     .rc-line.disc .rc-cat, .rc-line.disc .rc-rate { visibility: hidden; } /* 値引きは上の品目にまとめるので分類・税率は使わない */
     .rc-rate { border: 1px solid var(--line); background: var(--card2); color: var(--sub); border-radius: 999px; padding: 6px 9px; font-size: 12px; font-weight: 700; cursor: pointer; }
     .rc-rate.r8 { color: var(--income); border-color: var(--income); }
+    .rc-itemchips { padding: 8px 0 2px; }
+    .rc-itemchips .lbl { font-size: 12px; color: var(--sub); font-weight: 700; margin-bottom: 6px; }
+    .rc-itemchips .chip { padding: 6px 10px; font-size: 12px; }
     .rc-calc { font-size: 13px; padding: 4px 0; }
     .rc-calc .row { display: flex; justify-content: space-between; padding: 3px 0; color: var(--sub); }
     .rc-calc .row.total { color: var(--text); font-weight: 800; font-size: 17px; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 7px; }
@@ -2911,6 +2914,35 @@ function knownProducts() {
   db.entries.forEach(e => { if (e.type === 'expense' && e.item) freq.set(e.item, (freq.get(e.item) || 0) + 1); });
   return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 300).map(x => x[0]);
 }
+function receiptItemOptions(category) {
+  const cat = catsOf('expense').find(c => c.name === category);
+  const seen = new Set(), out = [];
+  [...(cat ? cat.items : []), ...itemHistory('expense', category), ...knownProducts()].forEach(x => { if (x && !seen.has(x) && out.length < 300) { seen.add(x); out.push(x); } });
+  return out;
+}
+function rcDatalistHtml(i, category) { return '<datalist id="rc-items-' + i + '">' + receiptItemOptions(category).map(x => '<option value="' + esc(x) + '"></option>').join('') + '</datalist>'; }
+function isRegisteredItem(category, name) { const c = catsOf('expense').find(x => x.name === category); return !!(c && name && c.items.includes(name)); }
+// 操作中の行の分類に登録された項目をチップで出す（タップでその行に入る）
+function renderRcItemChips() {
+  const box = document.getElementById('rc-itemchips'); if (!box || !receipt) return;
+  const i = Math.min(receipt.activeLine == null ? receipt.lines.length - 1 : receipt.activeLine, receipt.lines.length - 1);
+  const l = receipt.lines[i]; if (!l) { box.innerHTML = ''; return; }
+  const cat = catsOf('expense').find(c => c.name === l.category);
+  const items = cat ? cat.items : [];
+  box.innerHTML = '<div class="lbl">' + (i + 1) + '行目（' + esc(l.category) + '）の項目' + (items.length ? 'を選ぶ' : 'は登録されていません（設定 → 分類・項目の管理で追加できます）') + '</div>'
+    + (items.length ? '<div class="chips">' + items.map(x => '<button class="chip' + (x === l.item ? ' on' : '') + '" data-n="' + esc(x) + '" onclick="pickRcItem(this.dataset.n)">' + esc(x) + '</button>').join('') + '</div>' : '');
+}
+function rcFocus(i) { if (!receipt || receipt.activeLine === i) return; receipt.activeLine = i; renderRcItemChips(); }
+function pickRcItem(name) {
+  if (!receipt) return;
+  const i = Math.min(receipt.activeLine == null ? receipt.lines.length - 1 : receipt.activeLine, receipt.lines.length - 1);
+  const row = document.querySelector('#rc-lines .rc-line[data-i="' + i + '"]'); if (!row) return;
+  const input = row.querySelector('.rc-item');
+  input.value = name;
+  rcItemChanged(i, name);
+  renderRcItemChips();
+  const amt = row.querySelector('.rc-amt'); amt.focus();
+}
 function productInfo(name) {
   if (!name) return null;
   let best = null;
@@ -2971,20 +3003,20 @@ function renderReceiptModal() {
     + '<div class="btn-row" style="margin-bottom:6px">' + ocrBtn + '</div>'
     + '<div id="ocr-status" class="ocr-status">' + esc(r.status) + '</div>'
     + (r.ocrText ? '<details><summary class="small">読み取ったテキストを表示</summary><div class="ocr-text">' + esc(r.ocrText) + '</div></details>' : '')
-    + '<div class="card-title" style="margin:10px 0 0"><span>品目</span><span class="small">金額で Enter → 次の行</span></div>'
-    + '<datalist id="rc-products">' + knownProducts().map(x => '<option value="' + esc(x) + '"></option>').join('') + '</datalist>'
+    + '<div class="card-title" style="margin:10px 0 0"><span>項目・品名</span><span class="small">金額で Enter → 次の行</span></div>'
     + '<div id="rc-lines">';
   r.lines.forEach((l, i) => {
     const info = productInfo(l.item);
     const disc = calcAmount(l.amount) < 0;
     html += '<div class="rc-line' + (disc ? ' disc' : '') + '" data-i="' + i + '">'
-      + '<input class="input rc-item" list="rc-products" value="' + esc(l.item) + '" placeholder="品名（例: 牛乳）" onchange="rcItemChanged(' + i + ', this.value)">'
+      + '<input class="input rc-item" list="rc-items-' + i + '" value="' + esc(l.item) + '" placeholder="項目・品名" onfocus="rcFocus(' + i + ')" onchange="rcItemChanged(' + i + ', this.value)">' + rcDatalistHtml(i, l.category)
       + '<input class="input num rc-amt" type="text" inputmode="numeric" value="' + esc(l.amount) + '" placeholder="' + (info ? '前回' + info.amount.toLocaleString() : '金額') + '" oninput="updateReceiptSum()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addReceiptLine();}">'
-      + '<select class="select rc-cat" onchange="rcCatChanged(' + i + ', this.value)">' + catOptions('expense', l.category) + (catsOf('expense').find(c => c.name === l.category) ? '' : '<option selected>' + esc(l.category) + '</option>') + '</select>'
+      + '<select class="select rc-cat" onfocus="rcFocus(' + i + ')" onchange="rcCatChanged(' + i + ', this.value)">' + catOptions('expense', l.category) + (catsOf('expense').find(c => c.name === l.category) ? '' : '<option selected>' + esc(l.category) + '</option>') + '</select>'
       + '<div class="rc-tools">' + (out ? '<button class="rc-rate' + (l.rate === 8 ? ' r8' : '') + '" onclick="toggleRate(' + i + ')" title="税率を切り替え">' + (l.rate === 8 ? '8%' : '10%') + '</button>' : '')
       + '<button class="icon-btn danger" onclick="removeReceiptLine(' + i + ')" title="この行を削除">×</button></div></div>';
   });
   html += '</div>'
+    + '<div id="rc-itemchips" class="rc-itemchips"></div>'
     + '<div class="btn-row"><button class="btn secondary sm" onclick="addReceiptLine()">＋ 行を追加</button><button class="btn secondary sm" onclick="addReceiptLine(true)">－ 値引きの行</button></div>'
     + '<div class="rc-calc" id="rc-calc"></div>'
     + '<div class="row2"><div class="field"><label>レシートの合計金額（確認用・任意）</label><input id="rc-total" class="input num" type="text" inputmode="numeric" value="' + esc(r.total) + '" oninput="updateReceiptSum()" placeholder="合計"></div>'
@@ -2993,6 +3025,7 @@ function renderReceiptModal() {
     + '<button class="btn" onclick="saveReceipt()">' + (r.editId ? 'レシートを保存し直す' : 'まとめて保存する') + '</button>';
   openModal(r.editId ? 'レシートを編集' : 'レシート入力', html);
   updateReceiptSum();
+  renderRcItemChips();
 }
 function setReceiptTax(mode) { readReceiptForm(); receipt.taxMode = mode === 'out' ? 'out' : 'in'; renderReceiptModal(); }
 function toggleRate(i) { readReceiptForm(); const l = receipt.lines[i]; l.rate = l.rate === 8 ? 10 : 8; l.rateSet = true; renderReceiptModal(); }
@@ -3002,13 +3035,20 @@ function rcItemChanged(i, name) {
   l.item = name.trim();
   const info = productInfo(l.item); if (!info) return;
   const row = document.querySelector('#rc-lines .rc-line[data-i="' + i + '"]'); if (!row) return;
-  if (catsOf('expense').some(c => c.name === info.category)) { l.category = info.category; row.querySelector('.rc-cat').value = info.category; }
+  if (!isRegisteredItem(l.category, l.item) && catsOf('expense').some(c => c.name === info.category) && info.category !== l.category) {
+    l.category = info.category; row.querySelector('.rc-cat').value = info.category;
+    row.querySelector('datalist').outerHTML = rcDatalistHtml(i, l.category);
+    if (receipt.activeLine === i) renderRcItemChips();
+  }
   if (!l.rateSet) { l.rate = defaultRate(l.category); const rb = row.querySelector('.rc-rate'); if (rb) { rb.textContent = l.rate + '%'; rb.classList.toggle('r8', l.rate === 8); } }
   row.querySelector('.rc-amt').placeholder = '前回' + info.amount.toLocaleString();
 }
 function rcCatChanged(i, cat) {
   const l = receipt.lines[i]; if (!l) return;
   l.category = cat;
+  const row = document.querySelector('#rc-lines .rc-line[data-i="' + i + '"]');
+  if (row) { const dl = row.querySelector('datalist'); if (dl) dl.outerHTML = rcDatalistHtml(i, cat); }
+  receipt.activeLine = i; renderRcItemChips();
   if (!l.rateSet && receipt.taxMode === 'out') { l.rate = defaultRate(cat); const rb = document.querySelector('#rc-lines .rc-line[data-i="' + i + '"] .rc-rate'); if (rb) { rb.textContent = l.rate + '%'; rb.classList.toggle('r8', l.rate === 8); } updateReceiptSum(); }
 }
 function updateReceiptSum() {
@@ -3039,6 +3079,7 @@ function addReceiptLine(discount) {
   const l = newReceiptLine(last ? last.category : null);
   if (discount) { l.item = '値引き'; l.amount = '-'; }
   receipt.lines.push(l);
+  receipt.activeLine = receipt.lines.length - 1;
   renderReceiptModal();
   const sel = discount ? '#rc-lines .rc-amt' : '#rc-lines .rc-item';
   const rows = document.querySelectorAll(sel); if (rows.length) { const el = rows[rows.length - 1]; el.focus(); if (discount) el.setSelectionRange(1, 1); }
@@ -3047,6 +3088,7 @@ function removeReceiptLine(i) {
   readReceiptForm();
   receipt.lines.splice(i, 1);
   if (!receipt.lines.length) receipt.lines.push(newReceiptLine());
+  receipt.activeLine = Math.min(receipt.activeLine == null ? 0 : receipt.activeLine, receipt.lines.length - 1);
   renderReceiptModal();
 }
 function saveReceipt() {
