@@ -739,39 +739,45 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
 
     // 事業の経費と家計の分離: 3社のプルダウン・家計の集計から除外・会社別表示・まとめて変更・CSV・定期収支・レシート
     await ux.click('[data-view=input]'); await ux.click('#type-exp');
+    check('事業: 会社が未登録なら「家計／事業」の欄は出ない', await ux.evaluate(() => db.companies.length === 0 && document.getElementById('in-bizfield').style.display === 'none'));
+    check('事業: 会社名はプログラムに書かれていない', await ux.evaluate(() => typeof DEFAULT_COMPANIES === 'undefined'));
+    await openSettings(ux);
+    for (const c of ['テスト商事', 'サンプル株式会社', '株式会社見本ラボ']) { await ux.evaluate(n => { window.prompt = () => n; }, c); await ux.click('button:has-text("＋ 会社を追加")'); await wait(50); }
+    check('事業: 設定で会社を登録', (await ux.evaluate(() => db.companies.join(','))) === 'テスト商事,サンプル株式会社,株式会社見本ラボ');
+    await ux.click('[data-view=input]'); await ux.click('#type-exp');
     const bizOpts = await ux.$$eval('#in-biz option', l => l.map(o => o.textContent));
-    check('事業: 家計と3社を選べる', bizOpts.join(',') === '家計,🏢 TNファシリティコンサルティング,🏢 TNファシリティ株式会社,🏢 株式会社明るい未来ラボ', bizOpts.join(','));
-    await ux.selectOption('#in-biz', '株式会社明るい未来ラボ'); await ux.dispatchEvent('#in-biz', 'change');
+    check('事業: 家計と3社を選べる', bizOpts.join(',') === '家計,🏢 テスト商事,🏢 サンプル株式会社,🏢 株式会社見本ラボ', bizOpts.join(','));
+    await ux.selectOption('#in-biz', '株式会社見本ラボ'); await ux.dispatchEvent('#in-biz', 'change');
     await ux.fill('#in-amount', '55000'); await ux.fill('#in-memo', '事業テスト');
     check('事業: 保存ボタンに事業と表示', (await text(ux, '#save-btn')).includes('🏢') && (await text(ux, '#save-btn')).includes('（事業）'));
     await ux.click('#save-btn'); await wait(100);
     const bz = await ux.evaluate(() => db.entries.find(e => e.memo === '事業テスト'));
-    check('事業: 会社名を付けて保存', bz && bz.biz === '株式会社明るい未来ラボ', JSON.stringify(bz));
+    check('事業: 会社名を付けて保存', bz && bz.biz === '株式会社見本ラボ', JSON.stringify(bz));
     await ux.reload(); await ux.waitForSelector('#view-input.active');
-    check('事業: 前回の区分を覚えている', (await ux.inputValue('#in-biz')) === '株式会社明るい未来ラボ');
+    check('事業: 前回の区分を覚えている', (await ux.inputValue('#in-biz')) === '株式会社見本ラボ');
     await ux.selectOption('#in-biz', ''); await ux.dispatchEvent('#in-biz', 'change');
     await ux.click('[data-view=list]');
     check('事業: 一覧は家計のみが初期表示（事業の経費は合計に入らない）', (await ux.inputValue('#scope-sel')) === 'home' && !(await text(ux, '#list-body')).includes('事業テスト'));
-    await ux.selectOption('#scope-sel', 'c:株式会社明るい未来ラボ');
+    await ux.selectOption('#scope-sel', 'c:株式会社見本ラボ');
     check('事業: 会社を選ぶとその会社の経費だけ', (await text(ux, '#list-body')).includes('事業テスト') && (await text(ux, '#list-summary')).includes('¥55,000'));
     await ux.click('[data-view=report]'); await ux.click('#rep-month');
     await ux.selectOption('#scope-sel', 'home');
     const bizCard = await text(ux, '#biz-card');
-    check('事業: 集計に会社別の事業経費（家計の合計には含まない）', bizCard.includes('株式会社明るい未来ラボ') && bizCard.includes('¥55,000') && !(await text(ux, '#report-body .donut-wrap')).includes('¥55,000'), bizCard);
+    check('事業: 集計に会社別の事業経費（家計の合計には含まない）', bizCard.includes('株式会社見本ラボ') && bizCard.includes('¥55,000') && !(await text(ux, '#report-body .donut-wrap')).includes('¥55,000'), bizCard);
     await ux.click('#biz-card .lrow'); await wait(50);
-    check('事業: 会社名タップで表示切り替え', (await ux.inputValue('#scope-sel')) === 'c:株式会社明るい未来ラボ');
+    check('事業: 会社名タップで表示切り替え', (await ux.inputValue('#scope-sel')) === 'c:株式会社見本ラボ');
     await ux.selectOption('#scope-sel', 'home');
     await ux.click('[data-view=budget]');
     check('事業: 予算は家計のみで計算', !(await ux.evaluate(() => entriesInMonth(ui.month, 'home').some(e => e.biz))) && (await text(ux, '#budget-body')).includes('事業の経費は含みません'));
-    // まとめて変更: 交際費を検索してTNファシリティ株式会社へ
+    // まとめて変更: 交際費を検索してサンプル株式会社へ
     await ux.click('[data-view=list]'); await ux.click('#filter-btn'); await ux.selectOption('#f-cat', '交際費');
-    await ux.selectOption('#f-bulkbiz', 'TNファシリティ株式会社'); await ux.click('button:has-text("変更")'); await wait(100);
-    check('事業: 絞り込み結果（今月の交際費）をまとめて会社に変更', await ux.evaluate(() => { const l = db.entries.filter(e => e.category === '交際費'); return l.filter(e => periodOf(e.date) === ui.month).every(e => e.biz === 'TNファシリティ株式会社') && l.filter(e => periodOf(e.date) !== ui.month).every(e => !e.biz); }));
+    await ux.selectOption('#f-bulkbiz', 'サンプル株式会社'); await ux.click('button:has-text("変更")'); await wait(100);
+    check('事業: 絞り込み結果（今月の交際費）をまとめて会社に変更', await ux.evaluate(() => { const l = db.entries.filter(e => e.category === '交際費'); return l.filter(e => periodOf(e.date) === ui.month).every(e => e.biz === 'サンプル株式会社') && l.filter(e => periodOf(e.date) !== ui.month).every(e => !e.biz); }));
     check('事業: まとめて変更後は家計の一覧から消える', (await text(ux, '#list-body')).includes('該当する明細がありません'));
-    await ux.selectOption('#scope-sel', 'c:TNファシリティ株式会社');
+    await ux.selectOption('#scope-sel', 'c:サンプル株式会社');
     const [dlb] = await Promise.all([ux.waitForEvent('download'), ux.click('text=この結果をCSVで保存')]);
     const dlbTxt = fs.readFileSync(await dlb.path(), 'utf8');
-    check('事業: 会社ごとにCSVで保存（事業区分の列つき）', dlbTxt.split('\r\n')[0].endsWith('事業区分') && dlbTxt.includes('TNファシリティ株式会社') && !dlbTxt.includes(',家計'), dlbTxt.slice(0, 160));
+    check('事業: 会社ごとにCSVで保存（事業区分の列つき）', dlbTxt.split('\r\n')[0].endsWith('事業区分') && dlbTxt.includes('サンプル株式会社') && !dlbTxt.includes(',家計'), dlbTxt.slice(0, 160));
     await ux.click('text=条件をクリア'); await ux.click('#filter-btn'); await ux.selectOption('#scope-sel', 'home');
     // 編集で家計に戻す
     await ux.selectOption('#scope-sel', 'all');
@@ -781,21 +787,21 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await ux.selectOption('#scope-sel', 'home');
     // 会社名の変更が明細に反映
     await openSettings(ux);
-    await ux.evaluate(() => { window.prompt = () => 'TNファシリティ株式会社（本社）'; });
-    await ux.click('#company-list .cat-item:has-text("TNファシリティ株式会社") >> button[title="名前を変更"]'); await wait(100);
-    check('事業: 会社名の変更が明細に反映', await ux.evaluate(() => db.entries.filter(e => e.category === '交際費' && periodOf(e.date) === ui.month).every(e => e.biz === 'TNファシリティ株式会社（本社）') && db.companies.includes('TNファシリティ株式会社（本社）') && !db.companies.includes('TNファシリティ株式会社')));
+    await ux.evaluate(() => { window.prompt = () => 'サンプル株式会社（本社）'; });
+    await ux.click('#company-list .cat-item:has-text("サンプル株式会社") >> button[title="名前を変更"]'); await wait(100);
+    check('事業: 会社名の変更が明細に反映', await ux.evaluate(() => db.entries.filter(e => e.category === '交際費' && periodOf(e.date) === ui.month).every(e => e.biz === 'サンプル株式会社（本社）') && db.companies.includes('サンプル株式会社（本社）') && !db.companies.includes('サンプル株式会社')));
     // レシートと定期収支にも区分
     await ux.click('[data-view=input]'); await ux.click('#type-exp'); await ux.click('#receipt-top-btn'); await ux.waitForSelector('#rc-biz');
-    await ux.selectOption('#rc-biz', 'TNファシリティコンサルティング');
+    await ux.selectOption('#rc-biz', 'テスト商事');
     await ux.fill('#rc-lines .rc-prod >> nth=0', '事業用文具'); await ux.fill('#rc-lines .rc-amt >> nth=0', '880');
     await ux.click('button:has-text("まとめて保存する")'); await wait(100);
-    check('事業: レシートに会社を付けて保存', (await ux.evaluate(() => (db.entries.find(e => e.product === '事業用文具') || {}).biz)) === 'TNファシリティコンサルティング');
+    check('事業: レシートに会社を付けて保存', (await ux.evaluate(() => (db.entries.find(e => e.product === '事業用文具') || {}).biz)) === 'テスト商事');
     await openSettings(ux);
     await ux.click('text=＋ 定期収支を追加'); await ux.waitForSelector('#m-r-biz');
     await ux.fill('#m-r-amount', '33000'); await ux.selectOption('#m-r-cat', '住居費'); await ux.selectOption('#m-r-item', '家賃'); await ux.fill('#m-r-memo', '事務所家賃'); await ux.fill('#m-r-day', '1');
-    await ux.selectOption('#m-r-biz', '株式会社明るい未来ラボ');
+    await ux.selectOption('#m-r-biz', '株式会社見本ラボ');
     await ux.click('#modal-box button:has-text("保存する")'); await wait(100);
-    check('事業: 定期収支の自動入力にも会社', await ux.evaluate(() => { const l = db.entries.filter(e => e.memo === '事務所家賃'); return l.length > 0 && l.every(e => e.biz === '株式会社明るい未来ラボ'); }));
+    check('事業: 定期収支の自動入力にも会社', await ux.evaluate(() => { const l = db.entries.filter(e => e.memo === '事務所家賃'); return l.length > 0 && l.every(e => e.biz === '株式会社見本ラボ'); }));
 
     // 日記は入力欄から離れなくても少し待てば保存される
     await ux.click('[data-view=calendar]'); await ux.click('#cal-grid .cell.today');

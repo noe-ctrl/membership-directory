@@ -609,7 +609,7 @@
       <div class="card-title">事業の経費（会社）</div>
       <div id="company-list"></div>
       <div class="btn-row"><button class="btn secondary sm" onclick="addCompany()">＋ 会社を追加</button></div>
-      <div class="hint">入力時に「家計／事業」で会社を選ぶと、その明細は事業の経費として家計の集計・予算から外れます。画面上部の「表示」で会社ごとの経費を確認でき、一覧の絞り込みから会社ごとにCSVで保存できます。</div>
+      <div class="hint">事業の経費を家計と分けたいときは、ここで会社を登録すると入力画面に「家計／事業」の欄が出ます。入力時に「家計／事業」で会社を選ぶと、その明細は事業の経費として家計の集計・予算から外れます。画面上部の「表示」で会社ごとの経費を確認でき、一覧の絞り込みから会社ごとにCSVで保存できます。</div>
     </div>
 
     <div class="set-sec">データの移行・同期</div>
@@ -805,7 +805,6 @@ const YM_RE = /^\d{4}-\d{2}$/;
 // 日記の天気（loadDb より前に定義する）
 const WEATHERS = [['sun', '☀️', '晴れ'], ['cloud', '☁️', 'くもり'], ['rain', '☔', '雨'], ['snow', '⛄', '雪']];
 // 事業の経費を分ける会社（設定で変更できる）
-const DEFAULT_COMPANIES = ['TNファシリティコンサルティング', 'TNファシリティ株式会社', '株式会社明るい未来ラボ'];
 const DEFAULT_ACCOUNTS = [{ name: '現金', initial: 0 }, { name: '銀行口座', initial: 0 }, { name: 'クレジットカード', initial: 0 }];
 
 /* ─── 状態 ─────────────────────────────── */
@@ -881,7 +880,7 @@ function normalizeDb(data) {
     recurring: Array.isArray(d.recurring) ? d.recurring.map(sanitizeRule).filter(Boolean) : [],
     diary: sanitizeDiary(d.diary),
     members: sanitizeMembers(d.members),
-    companies: Array.isArray(d.companies) ? sanitizeNames(d.companies, 40) : DEFAULT_COMPANIES.slice(),
+    companies: Array.isArray(d.companies) ? sanitizeNames(d.companies, 40) : [], // 会社名はプログラムに書かず、設定で登録する
     goals: Array.isArray(d.goals) ? d.goals.map(sanitizeGoal).filter(Boolean).slice(0, 30) : [],
     accounts: Array.isArray(d.accounts) ? d.accounts.filter(a => a && a.name).map(a => {
       const o = { id: safeId(a.id), name: String(a.name), initial: Math.round(num0(a.initial)) };
