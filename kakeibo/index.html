@@ -337,6 +337,16 @@
     .acct-row:last-child { border-bottom: none; }
     .acct-row .n { font-weight: 700; }
     .acct-row.total { font-weight: 800; border-top: 2px solid var(--line); border-bottom: none; margin-top: 2px; }
+    .acct-row.link { cursor: pointer; }
+    .acct-row.link:active { background: var(--card2); }
+    /* 出納帳 */
+    .ledger-nav { display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .ledger-nav .nav-btn { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px; width: 36px; height: 36px; font-size: 18px; cursor: pointer; line-height: 1; }
+    .ledger-nav .month-label { min-width: 110px; text-align: center; font-weight: 700; }
+    .table.ledger { font-size: 12px; }
+    .table.ledger th:nth-child(2), .table.ledger td:nth-child(2) { text-align: left; white-space: normal; min-width: 96px; }
+    .table.ledger tbody tr.row { cursor: pointer; }
+    .table.ledger tr.carry td { color: var(--sub); }
     /* レシートの1行: 上段に商品名と金額、下段に分類・項目・税率・削除 */
     .rc-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 112px; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line2); }
     .rc-line .rc-prod { grid-column: 1 / span 2; }
@@ -959,7 +969,7 @@ function sanitizeEntry(e) {
     id: safeId(e.id),
     date: e.date,
     type,
-    category: type === 'transfer' ? '振替' : String(e.category || 'その他'),
+    category: type === 'transfer' ? (e.category === '残高調整' ? '残高調整' : '振替') : String(e.category || 'その他'),
     item: String(e.item || ''),
     product: e.product && type !== 'transfer' ? String(e.product).slice(0, 80) : undefined, // 商品名（自由入力）
     amount,
@@ -1138,16 +1148,22 @@ function renameEverywhere(kind, oldName, newName) {
     }
   }
 }
-function accountBalance(name) {
+// 1件の明細がその口座の残高をいくら動かすか（振替・残高調整は account から出て toAccount に入る）
+function balanceDelta(e, name) {
+  if (e.type === 'income') return e.account === name ? e.amount : 0;
+  if (e.type === 'expense') return e.account === name ? -e.amount : 0;
+  if (e.type === 'transfer') return (e.account === name ? -e.amount : 0) + (e.toAccount === name ? e.amount : 0);
+  return 0;
+}
+// upTo（YYYY-MM-DD）を渡すと、その日の終わり時点の残高
+function accountBalance(name, upTo) {
   const a = db.accounts.find(x => x.name === name);
   let bal = a ? a.initial : 0;
-  db.entries.forEach(e => {
-    if (e.type === 'income' && e.account === name) bal += e.amount;
-    else if (e.type === 'expense' && e.account === name) bal -= e.amount;
-    else if (e.type === 'transfer') { if (e.account === name) bal -= e.amount; if (e.toAccount === name) bal += e.amount; }
-  });
+  db.entries.forEach(e => { if (!upTo || e.date <= upTo) bal += balanceDelta(e, name); });
   return bal;
 }
+// 残高調整: 口座の残高を実際の金額に合わせた記録。振替の一種なので収支の集計には入らず、口座残高だけに効く
+function isAdjust(e) { return e.type === 'transfer' && e.category === '残高調整'; }
 function accountOptions(selected, allowNone) {
   return (allowNone ? '<option value=""' + (!selected ? ' selected' : '') + '>（指定なし）</option>' : '')
     + db.accounts.map(a => '<option value="' + esc(a.name) + '"' + (a.name === selected ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('')
@@ -1450,7 +1466,10 @@ function goInputFor(date) {
 /* ─── 明細行 ─────────────────────────── */
 function entryRow(e) {
   let title, sub, color, amtCls, sign;
-  if (e.type === 'transfer') {
+  if (isAdjust(e)) {
+    title = '残高調整'; sub = [e.toAccount || e.account || '?', e.memo].filter(Boolean).join(' · ');
+    color = OTHER_COLOR; amtCls = 'trn'; sign = e.toAccount ? '+' : '-';
+  } else if (e.type === 'transfer') {
     title = '振替'; sub = [(e.account || '?') + ' → ' + (e.toAccount || '?'), e.memo].filter(Boolean).join(' · ');
     color = OTHER_COLOR; amtCls = 'trn'; sign = '';
   } else {
@@ -1569,10 +1588,125 @@ function accountCardHtml() {
   const rows = db.accounts.map(a => ({ name: a.name, bal: accountBalance(a.name) }));
   const total = rows.reduce((s, r) => s + r.bal, 0);
   return '<div class="card" style="padding:12px 16px"><div class="card-title" style="margin-bottom:4px"><span>口座残高</span><button class="btn secondary sm" onclick="ui.acctOpen=!ui.acctOpen;renderList()">' + (ui.acctOpen ? '閉じる' : '表示') + '</button></div>'
-    + (ui.acctOpen ? rows.map(r => '<div class="acct-row"><span class="n">' + esc(r.name) + '</span><span class="num' + (r.bal < 0 ? ' exp' : '') + '">' + fmtYen(r.bal) + '</span></div>').join('')
+    + (ui.acctOpen ? rows.map(r => '<div class="acct-row link" data-n="' + esc(r.name) + '" onclick="openLedger(this.dataset.n)" title="出納帳を開く"><span class="n">📒 ' + esc(r.name) + '</span><span class="num' + (r.bal < 0 ? ' exp' : '') + '">' + fmtYen(r.bal) + '</span></div>').join('')
       + '<div class="acct-row total"><span>合計</span><span class="num' + (total < 0 ? ' exp' : '') + '">' + fmtYen(total) + '</span></div>'
+      + '<div class="hint">口座をタップすると出納帳を開き、残高を実際の金額に合わせられます。</div>'
       : '<div class="small num">合計 ' + fmtYen(total) + '</div>')
     + '</div>';
+}
+
+/* ─── 口座の出納帳・残高調整 ─────────── */
+function ledgerTitle(e, name) {
+  if (isAdjust(e)) return '残高調整' + (e.memo ? '（' + e.memo + '）' : '');
+  if (e.type === 'transfer') return (e.account === name ? '振替 → ' + (e.toAccount || '?') : '振替 ← ' + (e.account || '?')) + (e.memo ? '（' + e.memo + '）' : '');
+  const prod = productOf(e);
+  return [prod || e.item || e.category, e.store].filter(Boolean).join(' · ');
+}
+// 期間の前日までの残高（繰越）と、期間内の入出金・残高の推移
+function ledgerData(name, ym) {
+  const [from, to] = periodRange(ym);
+  const a = db.accounts.find(x => x.name === name);
+  let bal = a ? a.initial : 0, inSum = 0, outSum = 0;
+  const list = db.entries.map((e, i) => ({ e, i })).filter(x => x.e.account === name || x.e.toAccount === name)
+    .sort((x, y) => (x.e.date < y.e.date ? -1 : x.e.date > y.e.date ? 1 : x.i - y.i));
+  const rows = [];
+  list.forEach(({ e }) => {
+    if (e.date > to) return;
+    const delta = balanceDelta(e, name);
+    bal += delta;
+    if (e.date < from) return;
+    if (delta > 0) inSum += delta; else outSum -= delta;
+    rows.push({ e, delta, bal });
+  });
+  const opening = rows.length ? rows[0].bal - rows[0].delta : bal;
+  return { from, to, opening, rows, inSum, outSum, closing: bal };
+}
+function openLedgerById(id) { const a = db.accounts.find(x => x.id === id); if (a) openLedger(a.name); }
+function openLedger(name, ym) { ui.ledger = { name, ym: ym || ui.month || currentPeriod() }; renderLedger(); }
+function shiftLedger(n) { if (!ui.ledger) return; ui.ledger.ym = addMonths(ui.ledger.ym, n); renderLedger(); }
+function renderLedger() {
+  const { name, ym } = ui.ledger, d = ledgerData(name, ym), md = ds => Number(ds.slice(5, 7)) + '/' + Number(ds.slice(8));
+  const html = '<div class="ledger-nav"><button class="nav-btn" onclick="shiftLedger(-1)" aria-label="前の月">‹</button><span class="month-label">' + fmtMonth(ym) + (startDay() !== 1 ? '<div class="range">' + fmtRange(ym) + '</div>' : '') + '</span><button class="nav-btn" onclick="shiftLedger(1)" aria-label="次の月">›</button></div>'
+    + '<div class="table-wrap"><table class="table ledger"><thead><tr><th>日付</th><th>内容</th><th>入金</th><th>出金</th><th>残高</th></tr></thead><tbody>'
+    + '<tr class="carry"><td></td><td>前月から繰越</td><td></td><td></td><td class="num">' + fmtYen(d.opening) + '</td></tr>'
+    + d.rows.map(r => '<tr class="row" onclick="openEdit(\'' + r.e.id + '\')"><td>' + md(r.e.date) + '</td><td>' + esc(ledgerTitle(r.e, name)) + '</td><td class="num inc">' + (r.delta > 0 ? fmtYen(r.delta) : '') + '</td><td class="num exp">' + (r.delta < 0 ? fmtYen(-r.delta) : '') + '</td><td class="num' + (r.bal < 0 ? ' exp' : '') + '">' + fmtYen(r.bal) + '</td></tr>').join('')
+    + (d.rows.length ? '' : '<tr><td></td><td class="small">この期間の入出金はありません</td><td></td><td></td><td></td></tr>')
+    + '<tr class="total"><td></td><td>期末残高</td><td class="num inc">' + fmtYen(d.inSum) + '</td><td class="num exp">' + fmtYen(d.outSum) + '</td><td class="num' + (d.closing < 0 ? ' exp' : '') + '">' + fmtYen(d.closing) + '</td></tr>'
+    + '</tbody></table></div>'
+    + '<div class="acct-row total" style="margin:10px 0 4px"><span>現在の残高</span><span class="num">' + fmtYen(accountBalance(name)) + '</span></div>'
+    + '<button class="btn" onclick="openAdjust(ui.ledger.name)">残高を実際の金額に合わせる</button>'
+    + '<div class="btn-row"><button class="btn secondary sm" onclick="printLedger()">🖨 印刷・PDF</button><button class="btn secondary sm" onclick="exportLedgerCsv()">CSVで保存</button></div>'
+    + '<div class="hint">行をタップすると明細を直せます。残高調整は収入・支出の集計には入りません。</div>';
+  openModal('出納帳: ' + name, html);
+}
+function printLedger() {
+  if (!ui.ledger) return;
+  const { name, ym } = ui.ledger, d = ledgerData(name, ym), now = new Date();
+  const html = '<h1>出納帳: ' + esc(name) + '（' + fmtMonth(ym) + '）</h1>'
+    + '<div class="meta">' + (startDay() !== 1 ? '期間 ' + fmtRange(ym) + '・' : '') + '作成日 ' + now.getFullYear() + '/' + (now.getMonth() + 1) + '/' + now.getDate() + '・家計簿アプリ</div>'
+    + '<table><tr><th>日付</th><th>内容</th><th class="r">入金</th><th class="r">出金</th><th class="r">残高</th></tr>'
+    + '<tr><td></td><td>前月から繰越</td><td></td><td></td><td class="r">' + fmtYen(d.opening) + '</td></tr>'
+    + d.rows.map(r => '<tr><td>' + Number(r.e.date.slice(5, 7)) + '/' + Number(r.e.date.slice(8)) + '</td><td>' + esc(ledgerTitle(r.e, name)) + '</td><td class="r">' + (r.delta > 0 ? fmtYen(r.delta) : '') + '</td><td class="r">' + (r.delta < 0 ? fmtYen(-r.delta) : '') + '</td><td class="r">' + fmtYen(r.bal) + '</td></tr>').join('')
+    + '<tr class="total"><td></td><td>期末残高</td><td class="r">' + fmtYen(d.inSum) + '</td><td class="r">' + fmtYen(d.outSum) + '</td><td class="r">' + fmtYen(d.closing) + '</td></tr></table>';
+  document.getElementById('print-area').innerHTML = html;
+  window.print();
+}
+function exportLedgerCsv() {
+  if (!ui.ledger) return;
+  const { name, ym } = ui.ledger, d = ledgerData(name, ym);
+  const lines = [['日付', '内容', '入金', '出金', '残高'], ['', '前月から繰越', '', '', d.opening]];
+  d.rows.forEach(r => lines.push([r.e.date.replace(/-/g, '/'), ledgerTitle(r.e, name), r.delta > 0 ? r.delta : '', r.delta < 0 ? -r.delta : '', r.bal]));
+  lines.push(['', '期末残高', d.inSum, d.outSum, d.closing]);
+  downloadFile('出納帳_' + name.replace(/[\\/:*?"<>|\s]+/g, '_') + '_' + ym + '.csv', '\ufeff' + lines.map(l => l.map(csvCell).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
+}
+// 残高調整の作成（name のみ）と編集（editId あり）
+function openAdjust(name, editId) {
+  const e = editId ? db.entries.find(x => x.id === editId) : null;
+  const fromLedger = !!document.querySelector('#modal.open .table.ledger'); // 出納帳から開いたときだけ出納帳に戻る
+  ui.adjust = { name, editId: e ? e.id : null, fromLedger };
+  const signBtn = id => '<button type="button" class="calc-btn" onclick="toggleSign(\'' + id + '\')" aria-label="プラス・マイナスを切り替え" title="プラス・マイナスを切り替え">±</button>';
+  openModal(e ? '残高調整を編集' : '残高を合わせる',
+    '<div class="field"><label>口座</label><div style="font-weight:700;padding:4px 0">' + esc(name) + '</div></div>'
+    + '<div class="field"><label>日付</label><input id="m-adj-date" class="input" type="date" value="' + (e ? e.date : todayStr()) + '" onchange="updateAdjust()"></div>'
+    + (e ? '<div class="field"><label>調整額（増やすときはプラス、減らすときはマイナス）</label><div class="amt-wrap">' + signBtn('m-adj-diff') + '<input id="m-adj-diff" class="input amount" type="text" inputmode="numeric" value="' + (e.toAccount ? '' : '-') + e.amount + '"></div></div>'
+      : '<div class="field"><label>実際の残高（円）</label><div class="amt-wrap">' + signBtn('m-adj-actual') + '<input id="m-adj-actual" class="input amount" type="text" inputmode="numeric" placeholder="通帳やカードの明細の残高" oninput="updateAdjust()"></div></div>'
+        + '<div id="m-adj-info" class="note" style="margin-bottom:12px"></div>')
+    + '<div class="field"><label>メモ</label><input id="m-adj-memo" class="input" value="' + esc(e ? e.memo : '') + '" placeholder="例: 利息、記入漏れ、移行時の差額"></div>'
+    + '<div class="hint">残高調整は収入・支出の集計には入らず、この口座の残高だけを変えます。クレジットカードのように残高がマイナスのときは ± で切り替えてください。</div>'
+    + '<button class="btn" onclick="saveAdjust()">' + (e ? '保存する' : '調整する') + '</button>'
+    + (e ? '<button class="btn danger" onclick="deleteEntry(\'' + e.id + '\')">この残高調整を削除</button>' : ''));
+  if (!e) { updateAdjust(); document.getElementById('m-adj-actual').focus(); }
+}
+function toggleSign(id) {
+  const el = document.getElementById(id); if (!el) return;
+  const v = el.value.trim();
+  el.value = /^[-−－]/.test(v) ? v.slice(1) : '-' + v;
+  if (id === 'm-adj-actual') updateAdjust();
+}
+function updateAdjust() {
+  const box = document.getElementById('m-adj-info'); if (!box || !ui.adjust) return;
+  const date = document.getElementById('m-adj-date').value || todayStr();
+  const booked = accountBalance(ui.adjust.name, date), actual = calcAmount(document.getElementById('m-adj-actual').value);
+  const diff = actual == null ? null : actual - booked;
+  box.innerHTML = 'この家計簿の残高（' + Number(date.slice(5, 7)) + '/' + Number(date.slice(8)) + ' 時点）: <b class="num">' + fmtYen(booked) + '</b>'
+    + (diff == null ? '' : '<br>差額: <b class="num' + (diff < 0 ? ' exp' : diff > 0 ? ' inc' : '') + '">' + (diff > 0 ? '+' : diff < 0 ? '-' : '±') + fmtYen(Math.abs(diff)) + '</b>' + (diff === 0 ? '（合っています）' : ''));
+}
+function saveAdjust() {
+  const a = ui.adjust; if (!a) return;
+  const date = document.getElementById('m-adj-date').value;
+  if (!date) { toast('日付を入力してください'); return; }
+  const memo = document.getElementById('m-adj-memo').value.trim();
+  let diff;
+  if (a.editId) diff = calcAmount(document.getElementById('m-adj-diff').value);
+  else { const actual = calcAmount(document.getElementById('m-adj-actual').value); if (actual == null) { toast('実際の残高を入力してください'); return; } diff = actual - accountBalance(a.name, date); }
+  if (!diff) { toast(a.editId ? '調整額を入力してください' : 'この家計簿の残高と同じです（調整は不要です）'); return; }
+  const fields = { date, type: 'transfer', category: '残高調整', item: '', amount: Math.abs(diff), memo, account: diff < 0 ? a.name : '', toAccount: diff > 0 ? a.name : '' };
+  if (a.editId) { const e = db.entries.find(x => x.id === a.editId); if (!e) return; Object.assign(e, fields); }
+  else db.entries.push(Object.assign({ id: uid() }, fields));
+  saveDb(); render();
+  toast(a.name + 'の残高を調整しました（' + (diff > 0 ? '+' : '-') + fmtYen(Math.abs(diff)) + '）');
+  if (a.fromLedger && ui.ledger) openLedger(ui.ledger.name, periodOf(date)); else closeModal();
+  ui.adjust = null;
 }
 
 /* ─── カレンダー ─────────────────────── */
@@ -1879,7 +2013,7 @@ function printReport(kind) {
       + '<h2>収入の内訳</h2>' + printTableBreakdown(list.filter(e => e.type === 'income'), inc)
       + (db.members.length ? '<h2>使った人別</h2><table><tr><th>使った人</th><th class="r">支出</th><th class="r">収入</th></tr>' + personTotals(list.filter(e => e.type === 'expense')).map(r => '<tr><td>' + esc(r.name) + '</td><td class="r">' + fmtYen(r.v) + '</td><td class="r">' + fmtYen((personTotals(list.filter(e => e.type === 'income')).find(x => x.name === r.name) || { v: 0 }).v) + '</td></tr>').join('') + '</table>' : '')
       + '<h2>明細（' + list.length + '件）</h2><table><tr><th>日付</th><th>種別</th><th>分類 / 項目</th><th>メモ・店名</th><th>口座</th><th class="r">金額</th></tr>'
-      + sortEntries(list).reverse().map(e => '<tr><td>' + Number(e.date.slice(5, 7)) + '/' + Number(e.date.slice(8)) + '</td><td>' + typeLabel(e.type) + '</td><td>' + esc(e.type === 'transfer' ? '振替' : e.category + (e.item ? ' / ' + e.item : '')) + '</td><td>' + esc([e.product, e.memo, e.store].filter(Boolean).join(' · ')) + '</td><td>' + esc(e.type === 'transfer' ? e.account + ' → ' + (e.toAccount || '') : [e.account, e.person ? '👤' + e.person : ''].filter(Boolean).join(' ')) + '</td><td class="r ' + (e.type === 'income' ? 'inc' : e.type === 'expense' ? 'exp' : '') + '">' + (e.type === 'income' ? '+' : e.type === 'expense' ? '-' : '') + fmtYen(e.amount) + '</td></tr>').join('')
+      + sortEntries(list).reverse().map(e => '<tr><td>' + Number(e.date.slice(5, 7)) + '/' + Number(e.date.slice(8)) + '</td><td>' + typeLabel(e.type) + '</td><td>' + esc(isAdjust(e) ? '残高調整' : e.type === 'transfer' ? '振替' : e.category + (e.item ? ' / ' + e.item : '')) + '</td><td>' + esc([e.product, e.memo, e.store].filter(Boolean).join(' · ')) + '</td><td>' + esc(isAdjust(e) ? (e.toAccount || e.account) : e.type === 'transfer' ? e.account + ' → ' + (e.toAccount || '') : [e.account, e.person ? '👤' + e.person : ''].filter(Boolean).join(' ')) + '</td><td class="r ' + (e.type === 'income' ? 'inc' : e.type === 'expense' ? 'exp' : '') + '">' + (e.type === 'income' ? '+' : e.type === 'expense' ? '-' : '') + fmtYen(e.amount) + '</td></tr>').join('')
       + '</table>';
   }
   document.getElementById('print-area').innerHTML = html;
@@ -2018,6 +2152,7 @@ function renderSettings() {
 
   document.getElementById('acct-list').innerHTML = db.accounts.map((a, i) =>
     '<div class="cat-item"><div class="n"><div>' + esc(a.name) + '</div><div class="items">残高 <span class="num">' + fmtYen(accountBalance(a.name)) + '</span>（初期残高 ' + fmtYen(a.initial) + '）</div></div>'
+    + '<button class="icon-btn" title="出納帳・残高調整" onclick="openLedgerById(\'' + a.id + '\')">📒</button>'
     + '<button class="icon-btn" title="上へ" onclick="moveAccount(' + i + ',-1)"' + (i === 0 ? ' disabled' : '') + '>↑</button>'
     + '<button class="icon-btn" title="下へ" onclick="moveAccount(' + i + ',1)"' + (i === db.accounts.length - 1 ? ' disabled' : '') + '>↓</button>'
     + '<button class="icon-btn" title="編集" onclick="openAccount(\'' + a.id + '\')">✎</button>'
@@ -2207,6 +2342,7 @@ function deleteRecurring(id) {
 function openEdit(id) {
   const e = db.entries.find(x => x.id === id);
   if (!e) return;
+  if (isAdjust(e)) { openAdjust(e.toAccount || e.account, e.id); return; }
   const isTr = e.type === 'transfer';
   const catType = isTr ? 'expense' : e.type;
   const receiptN = e.receiptId ? db.entries.filter(x => x.receiptId === e.receiptId).length : 0;
@@ -2535,7 +2671,7 @@ function buildImportEntries() {
     const product = col(r, 'product'), memo = col(r, 'memo');
     const entry = { date, type, category, item, amount, memo, account: col(r, 'account') };
     if (product && product !== item && type !== 'transfer') entry.product = product;
-    if (type === 'transfer') { entry.category = '振替'; entry.item = ''; entry.toAccount = col(r, 'toAccount') || item; }
+    if (type === 'transfer') { const adj = category === '残高調整'; entry.category = adj ? '残高調整' : '振替'; entry.item = ''; entry.toAccount = col(r, 'toAccount') || (adj ? '' : item); }
     const store = col(r, 'store'); if (store) entry.store = store;
     const person = col(r, 'person'); if (person && type !== 'transfer') entry.person = person.slice(0, 20);
     const biz = col(r, 'biz'); if (biz && biz !== '家計' && type !== 'transfer') entry.biz = biz.slice(0, 40);
@@ -2753,6 +2889,7 @@ function postCardPayments() {
       if (db.entries.some(e => e.autoPay === key)) continue;
       const inPeriod = db.entries.filter(e => e.date >= startDate && e.date <= closeDate && !e.autoPay);
       const amount = inPeriod.reduce((s, e) => {
+        if (isAdjust(e)) return s; // 残高調整は請求額に含めない
         if (e.type === 'expense' && e.account === a.name) return s + e.amount;
         if (e.type === 'income' && e.account === a.name) return s - e.amount;
         if (e.type === 'transfer' && e.account === a.name) return s + e.amount;

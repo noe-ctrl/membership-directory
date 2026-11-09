@@ -481,6 +481,73 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('.modal-close');
     await openSettings(page); await page.selectOption('#set-ocr', 'browser'); await wait(100);
 
+    // ── 口座の出納帳と残高調整 ──
+    const lg = await newPage(browser);
+    await lg.evaluate(() => {
+      const d = todayStr(), prev = addMonths(periodOf(d), -1) + '-05';
+      db.accounts.find(a => a.name === '現金').initial = 10000;
+      db.entries.push({ id: uid(), date: prev, type: 'expense', category: '食費', item: '外食', amount: 1000, memo: '', account: '現金' });
+      db.entries.push({ id: uid(), date: d, type: 'expense', category: '食費', item: 'スーパー', product: '牛乳', amount: 248, memo: '', account: '現金' });
+      db.entries.push({ id: uid(), date: d, type: 'transfer', category: '振替', item: '', amount: 5000, memo: '', account: '銀行口座', toAccount: '現金' });
+      saveDb(true); render();
+    });
+    await lg.click('[data-view=list]');
+    if ((await text(lg, '#acct-card button')).includes('表示')) await lg.click('#acct-card button');
+    await lg.click('#acct-card .acct-row.link:has-text("現金")'); await lg.waitForSelector('.table.ledger');
+    const ledTxt = await text(lg, '#modal-box');
+    check('出納帳: 繰越・入出金・残高の推移', ledTxt.includes('出納帳: 現金') && ledTxt.includes('前月から繰越') && ledTxt.includes('¥9,000') && ledTxt.includes('牛乳') && ledTxt.includes('¥8,752') && ledTxt.includes('振替 ← 銀行口座') && ledTxt.includes('¥13,752'), ledTxt.slice(0, 300));
+    await lg.click('.ledger-nav .nav-btn >> nth=0');
+    const ledPrev = await text(lg, '#modal-box');
+    check('出納帳: 前の月に切り替え', ledPrev.includes('外食') && ledPrev.includes('¥10,000') && !ledPrev.includes('牛乳'), ledPrev.slice(0, 200));
+    await lg.click('.ledger-nav .nav-btn >> nth=1');
+    // 残高を実際の金額に合わせる
+    const exBefore = await lg.evaluate(() => sumBy(entriesInMonth(currentPeriod()), 'expense'));
+    await lg.click('button:has-text("残高を実際の金額に合わせる")'); await lg.waitForSelector('#m-adj-actual');
+    await lg.fill('#m-adj-actual', '13,500');
+    check('残高調整: 差額を表示', (await text(lg, '#m-adj-info')).includes('¥13,752') && (await text(lg, '#m-adj-info')).includes('-¥252'), await text(lg, '#m-adj-info'));
+    await lg.fill('#m-adj-memo', '移行時の差額');
+    await lg.click('#modal-box button:has-text("調整する")'); await lg.waitForSelector('.table.ledger');
+    const adj = await lg.evaluate(() => ({ bal: accountBalance('現金'), e: db.entries.find(e => isAdjust(e)), ex: sumBy(entriesInMonth(currentPeriod()), 'expense'), inc: sumBy(entriesInMonth(currentPeriod()), 'income') }));
+    check('残高調整: 口座残高が実際の金額になる', adj.bal === 13500 && adj.e && adj.e.amount === 252 && adj.e.account === '現金' && !adj.e.toAccount, JSON.stringify(adj));
+    check('残高調整: 収入・支出の集計には入らない', adj.ex === exBefore && adj.inc === 0, JSON.stringify(adj));
+    check('残高調整: 出納帳に記録が残る', (await text(lg, '#modal-box')).includes('残高調整（移行時の差額）'));
+    await lg.click('.modal-close');
+    check('残高調整: 一覧の表示', (await text(lg, '#view-list .entry:has-text("残高調整")')).includes('-¥252'));
+    // マイナス残高（カード）に合わせる
+    await lg.evaluate(() => openAdjust('クレジットカード')); await lg.waitForSelector('#m-adj-actual');
+    await lg.fill('#m-adj-actual', '3000'); await lg.click('#modal-box .calc-btn');
+    check('残高調整: ±でマイナスに切り替え', (await lg.inputValue('#m-adj-actual')) === '-3000');
+    await lg.click('#modal-box button:has-text("調整する")'); await wait(100);
+    check('残高調整: マイナス残高に合わせる', (await lg.evaluate(() => accountBalance('クレジットカード'))) === -3000);
+    // 編集と削除
+    await lg.click('#view-list .entry:has-text("移行時の差額")'); await lg.waitForSelector('#m-adj-diff');
+    check('残高調整: 編集画面で調整額を表示', (await lg.inputValue('#m-adj-diff')) === '-252');
+    await lg.fill('#m-adj-diff', '-300'); await lg.click('#modal-box button:has-text("保存する")'); await wait(100);
+    check('残高調整: 調整額を直す', (await lg.evaluate(() => accountBalance('現金'))) === 13452);
+    await lg.click('#view-list .entry:has-text("移行時の差額")'); await lg.waitForSelector('#m-adj-diff');
+    await lg.click('button:has-text("この残高調整を削除")'); await wait(100);
+    check('残高調整: 削除すると元の残高', (await lg.evaluate(() => accountBalance('現金'))) === 13752);
+    // 設定から出納帳、印刷、CSV
+    await openSettings(lg);
+    await lg.click('#acct-list .cat-item:has-text("現金") >> button[title="出納帳・残高調整"]'); await lg.waitForSelector('.table.ledger');
+    await lg.evaluate(() => { window.print = () => { window.__printed = document.getElementById('print-area').innerHTML; }; });
+    await lg.click('#modal-box button:has-text("印刷・PDF")');
+    const printed = await lg.evaluate(() => window.__printed || '');
+    check('出納帳: 印刷', printed.includes('出納帳: 現金') && printed.includes('牛乳') && printed.includes('前月から繰越'), printed.slice(0, 120));
+    const [dlL] = await Promise.all([lg.waitForEvent('download'), lg.click('#modal-box button:has-text("CSVで保存")')]);
+    const ledCsv = fs.readFileSync(await dlL.path(), 'utf8');
+    check('出納帳: CSVで保存', ledCsv.includes('日付,内容,入金,出金,残高') && ledCsv.includes('前月から繰越,,,9000') && ledCsv.includes('期末残高,5000,248,13752'), ledCsv.slice(0, 160));
+    await lg.click('.modal-close');
+    // 書き出したCSVを取り込んでも残高調整のまま
+    const imp = await lg.evaluate(() => {
+      const rows = [['日付', '収支', '分類', '項目', '商品名', '金額', 'メモ', '支払方法', '振替先'], ['2026/11/01', '振替', '残高調整', '', '', '500', '', '', '現金']];
+      importState = { name: 't.csv', rows, hasHeader: true, map: guessColumns(rows[0]), typeMode: 'column', skipDup: true };
+      return buildImportEntries().entries[0];
+    });
+    check('残高調整: CSV取り込みで残高調整のまま', imp && imp.type === 'transfer' && imp.category === '残高調整' && imp.toAccount === '現金' && !imp.account, JSON.stringify(imp));
+    check('出納帳: JSエラーなし', lg.errors.length === 0, lg.errors.join(' / '));
+    await lg.context().close();
+
     // ── ダークモード ──
     const dark = await newPage(browser, { colorScheme: 'dark' });
     await dark.fill('#in-amount', '500'); await dark.click('#save-btn');
