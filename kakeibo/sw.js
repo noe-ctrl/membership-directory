@@ -1,5 +1,5 @@
 /* オフライン用 Service Worker：ネットワーク優先、失敗時はキャッシュを返す */
-const CACHE = 'kakeibo-v9';
+const CACHE = 'kakeibo-v10';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {

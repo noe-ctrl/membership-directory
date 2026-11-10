@@ -274,9 +274,9 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const yr = await page.evaluate(() => {
       const tiles = [...document.querySelectorAll('#report-body .tile')].map(t => t.textContent);
       const ex = Number((tiles[1].match(/¥([\d,]+)/) || [])[1].replace(/,/g, ''));
-      const cards = [...document.querySelectorAll('#report-body .card')];
-      const catCard = cards.find(c => c.textContent.includes('分類別の支出'));
-      const sum = catCard ? [...catCard.querySelectorAll('.lrow .a')].reduce((s, el) => s + Number(el.textContent.replace(/[¥,]/g, '')), 0) : -1;
+      // 年計表の分類ごとの年間合計（13列目）を足す
+      const rows = [...document.querySelectorAll('#year-table tr.row')];
+      const sum = rows.length ? rows.reduce((s, tr) => s + Number(tr.children[13].textContent.replace(/[¥,]/g, '')), 0) : -1;
       return { ex, sum };
     });
     check('年間の分類別合計が年間支出と一致（締め日あり）', yr.ex === yr.sum, JSON.stringify(yr));
@@ -389,7 +389,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
     await openSettings(pageB); await pageB.click('text=今すぐ同期'); await wait(600);
     const pB = await pageB.evaluate(() => ({ m: db.members.join(','), p: (db.entries.find(x => x.memo === 'A編集') || {}).person, v: db.settings.sync.serverVersion }));
-    check('使った人とメンバー一覧が同期される', pB.m === '自分,夫' && pB.p === '夫' && pB.v === 3, JSON.stringify(pB));
+    check('使った人とメンバー一覧が同期される', pB.m === '自分,夫' && pB.p === '夫' && pB.v === 4, JSON.stringify(pB));
 
     // 日記（天気・本文）の同期と削除の反映
     await page.click('[data-view=calendar]'); await page.click('#cal-grid .cell.today');
@@ -405,12 +405,26 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.click('text=今すぐ同期'); await wait(600);
     const diaryA = await page.evaluate(d => JSON.parse(localStorage.getItem('kakeibo.v1')).diary[d], today);
     check('日記の削除が他の端末に反映される', diaryA === undefined, JSON.stringify(diaryA));
+    // 資産・負債（meta）、予定・気温（レコード）の同期
+    await page.evaluate(d => {
+      db.assets.push(sanitizeAsset({ id: 'as1', name: 'つみたてNISA', kind: 'asset', group: '株・投資信託', values: [{ d, v: 500000 }] }));
+      db.plans.push(sanitizePlan({ id: 'plan-s1', date: d, time: '10:30', text: '同期する予定' }));
+      db.diary[d] = { w: 'sun', t: '', tp: '21.5' }; saveDb(true);
+    }, today);
+    await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
+    await pageB.click('text=今すぐ同期'); await wait(600);
+    const syB = await pageB.evaluate(d => ({ a: db.assets.map(a => a.name + ':' + assetValue(a)).join(','), p: db.plans.map(p => p.time + ' ' + p.text).join(','), tp: (db.diary[d] || {}).tp }), today);
+    check('資産・負債・予定・気温が他の端末に同期される', syB.a === 'つみたてNISA:500000' && syB.p === '10:30 同期する予定' && syB.tp === '21.5', JSON.stringify(syB));
+    await pageB.evaluate(d => { db.plans = []; delete db.diary[d]; saveDb(true); }, today);
+    await pageB.click('text=今すぐ同期'); await wait(600);
+    await page.click('text=今すぐ同期'); await wait(600);
+    check('予定の削除が他の端末に反映される', await page.evaluate(() => db.plans.length === 0));
     await shot(page, '04-settings');
 
     // ── 古い sync.gs（使った人の列なし）からの貼り替え ──
     const oldGas = await mock.start(8767, { syncFile: path.join(__dirname, 'fixtures', 'sync-v1.gs') });
     const pc = await newPage(browser);
-    await pc.evaluate(() => { db.members = ['自分', '妻']; db.entries.push({ id: 'pv1', date: todayStr(), type: 'expense', category: '食費', item: '', amount: 999, memo: '貼り替えテスト', account: '', person: '妻' }); saveDb(true); });
+    await pc.evaluate(() => { db.members = ['自分', '妻']; db.assets.push(sanitizeAsset({ name: '楽天ポイント', group: 'ポイント・電子マネー', values: [{ d: todayStr(), v: 1200 }] })); db.entries.push({ id: 'pv1', date: todayStr(), type: 'expense', category: '食費', item: '', amount: 999, memo: '貼り替えテスト', account: '', person: '妻' }); saveDb(true); });
     await openSettings(pc);
     await pc.fill('#set-sync-key', 'testkey'); await pc.press('#set-sync-key', 'Tab');
     await pc.fill('#set-sync-url', 'http://127.0.0.1:8767/exec'); await pc.press('#set-sync-url', 'Tab'); await wait(800);
@@ -421,6 +435,8 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     const sheet = Object.values(oldGas.env.spreadsheets)[0].getSheetByName('entries');
     const hdr = sheet.rows[0], row = sheet.rows.find(r => r[0] === 'pv1');
     check('貼り替え後に見出し行へ「person」「biz」「product」列を追加', hdr.includes('person') && hdr.includes('biz') && hdr[hdr.length - 1] === 'product', hdr.join(','));
+    const metaRows = Object.values(oldGas.env.spreadsheets)[0].getSheetByName('meta').rows;
+    check('貼り替え後に資産・負債を送り直す', metaRows.some(r => r[0] === 'assets' && String(r[1]).includes('楽天ポイント')), JSON.stringify(metaRows.map(r => r[0])));
     check('貼り替え後に使った人を送り直す', row && row[hdr.indexOf('person')] === '妻' && !(await text(pc, '#sync-status')).includes('sync.gs'), JSON.stringify(row));
     const pd = await newPage(browser);
     await openSettings(pd);
@@ -547,6 +563,97 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('残高調整: CSV取り込みで残高調整のまま', imp && imp.type === 'transfer' && imp.category === '残高調整' && imp.toAccount === '現金' && !imp.account, JSON.stringify(imp));
     check('出納帳: JSエラーなし', lg.errors.length === 0, lg.errors.join(' / '));
     await lg.context().close();
+
+    // ── 年計表・資産と負債・予定・一覧入力・気温 ──
+    const yp = await newPage(browser);
+    const thisYear = todayStr().slice(0, 4), lastYear = String(Number(thisYear) - 1);
+    await yp.evaluate(([y, py]) => {
+      db.entries.push(
+        { id: 'y1', date: y + '-01-10', type: 'expense', category: '食費', item: '外食', amount: 3000, memo: '', account: '現金' },
+        { id: 'y2', date: y + '-03-05', type: 'expense', category: '食費', item: '', amount: 2000, memo: '', account: '現金' },
+        { id: 'y3', date: y + '-03-06', type: 'expense', category: '住居費', item: '', amount: 80000, memo: '', account: '' },
+        { id: 'y4', date: py + '-02-01', type: 'expense', category: '食費', item: '', amount: 4000, memo: '', account: '' },
+        { id: 'y5', date: y + '-04-25', type: 'income', category: '給与', item: '', amount: 300000, memo: '', account: '' });
+      saveDb(true);
+    }, [thisYear, lastYear]);
+    await yp.click('[data-view=report]'); await yp.click('#rep-year'); await wait(60);
+    const yt = await text(yp, '#year-table');
+    check('年計表: 分類×月の表と前年比', yt.includes('年計表') && yt.includes('3月') && yt.includes('食費3,0002,0005,0004,000125%') && yt.includes('住居費'), yt.slice(0, 300));
+    await yp.click('#year-table tr.row:has-text("食費")'); await wait(60);
+    check('年計表: 分類をタップで項目の行', (await text(yp, '#year-table')).includes('外食') && (await text(yp, '#year-table')).includes('（項目なし）'));
+    await yp.click('#year-table .segment button:has-text("収入")'); await wait(60);
+    check('年計表: 収入に切り替え', (await text(yp, '#year-table')).includes('給与') && !(await text(yp, '#year-table')).includes('住居費'));
+    const [dlY] = await Promise.all([yp.waitForEvent('download'), yp.click('button:has-text("年計表をCSVで保存")')]);
+    const yCsv = fs.readFileSync(await dlY.path(), 'utf8');
+    check('年計表: CSVで保存', yCsv.includes('分類,項目,1月,2月') && yCsv.includes('給与,,0,0,0,300000'), yCsv.slice(0, 160));
+    await yp.click('#year-table .segment button:has-text("支出")'); await wait(60);
+    check('年計表: 年間の前年比を表示', (await text(yp, '#report-body .summary')).includes('前年 ¥4,000'), await text(yp, '#report-body .summary'));
+    await yp.evaluate(() => { window.print = () => { window.__printed = document.getElementById('print-area').innerHTML; }; });
+    await yp.click('button:has-text("この年を印刷・PDF")');
+    check('年計表: 印刷に年計表', await yp.evaluate(() => (window.__printed || '').includes('年計表（支出）') && window.__printed.includes('125%')));
+    // 資産・負債
+    await yp.click('[data-view=list]'); await yp.click('#asset-card button:has-text("追加")'); await yp.waitForSelector('#m-as-name');
+    await yp.fill('#m-as-name', 'つみたてNISA'); await yp.fill('#m-as-value', '500000+20000'); await yp.click('#modal-box button:has-text("保存する")'); await wait(80);
+    await yp.click('#asset-card button:has-text("追加")'); await yp.waitForSelector('#m-as-name');
+    await yp.selectOption('#m-as-kind', 'debt'); await yp.fill('#m-as-name', '自動車ローン'); await yp.fill('#m-as-value', '200000');
+    check('資産・負債: 負債に切り替えると区分も変わる', (await yp.inputValue('#m-as-group')) === '住宅ローン');
+    await yp.selectOption('#m-as-group', '自動車ローン'); await yp.click('#modal-box button:has-text("保存する")'); await wait(80);
+    const nw = await yp.evaluate(() => netWorth());
+    const ac = await text(yp, '#asset-card');
+    check('資産・負債: 純資産 = 口座 + 資産 - 負債', nw.asset === 520000 && nw.debt === 200000 && nw.net === nw.acct + 320000 && ac.includes('純資産') && ac.includes(fmtYenT(nw.net)), JSON.stringify(nw) + ' ' + ac);
+    // 価値を記録し直す（前回との差を表示）、記録の削除
+    await yp.click('#asset-card .acct-row:has-text("つみたてNISA")'); await yp.waitForSelector('#m-as-value');
+    await yp.fill('#m-as-date', thisYear + '-01-01'); await yp.fill('#m-as-value', '480000'); await yp.click('#modal-box button:has-text("保存する")'); await wait(80);
+    const nisa = await yp.evaluate(() => db.assets.find(a => a.name === 'つみたてNISA'));
+    check('資産・負債: 日付ごとに記録が残る', nisa.values.length === 2 && nisa.values[0].v === 480000 && nisa.values[1].v === 520000 && (await text(yp, '#asset-card')).includes('+¥40,000'), JSON.stringify(nisa.values));
+    check('資産・負債: 過去の時点の価値', await yp.evaluate(y => assetValue(db.assets.find(a => a.name === 'つみたてNISA'), y + '-01-15') === 480000 && assetValue(db.assets.find(a => a.name === 'つみたてNISA'), (Number(y) - 1) + '-12-31') === 0, thisYear));
+    await yp.click('#asset-card .acct-row:has-text("つみたてNISA")'); await yp.waitForSelector('#m-as-value');
+    await yp.click('#modal-box tr:has-text("480,000") button'); await wait(80);
+    check('資産・負債: 記録を削除', await yp.evaluate(() => db.assets.find(a => a.name === 'つみたてNISA').values.length === 1));
+    await yp.click('.modal-close');
+    await yp.click('#asset-card button:has-text("推移")'); await yp.waitForSelector('#modal-box .table');
+    check('資産・負債: 純資産の推移', (await text(yp, '#modal-box')).includes('純資産') && (await text(yp, '#modal-box')).includes(fmtYenT(nw.net)), (await text(yp, '#modal-box')).slice(0, 200));
+    await yp.click('.modal-close');
+    // 予定: カレンダーで追加 → 入力画面に今日・明日の予定
+    await yp.click('[data-view=calendar]'); await yp.click('#cal-grid .cell.today');
+    await yp.fill('#plan-time', '09:00'); await yp.fill('#plan-text', '歯医者'); await yp.click('.plan-add button'); await wait(60);
+    await yp.fill('#plan-text', '牛乳を買う'); await yp.press('#plan-text', 'Enter'); await wait(60);
+    check('予定: カレンダーに追加して印', (await text(yp, '#cal-day-entries')).includes('09:00歯医者') && (await text(yp, '#cal-grid .cell.today')).includes('📌'), await text(yp, '#cal-day-entries'));
+    check('予定: 時刻のない予定は後ろ', await yp.evaluate(() => plansOn(todayStr()).map(p => p.text).join(',') === '歯医者,牛乳を買う'));
+    await yp.evaluate(() => { db.plans.push(sanitizePlan({ date: addDays(todayStr(), 1), text: '燃えるゴミ' })); db.plans.push(sanitizePlan({ date: addDays(todayStr(), 3), text: '先の予定' })); saveDb(true); });
+    await yp.click('[data-view=input]'); await wait(60);
+    const pn = await text(yp, '#plan-note');
+    check('予定: 入力画面に今日・明日の予定', pn.includes('今日09:00歯医者') && pn.includes('明日燃えるゴミ') && !pn.includes('先の予定'), pn);
+    await yp.click('[data-view=calendar]'); // 今日を選んだまま
+    await yp.click('.plan-row:has-text("歯医者") button'); await wait(60);
+    check('予定: 削除', !(await text(yp, '#cal-day-entries')).includes('歯医者'));
+    // 日記の気温
+    await yp.fill('#diary-temp', '２３．５'); await yp.press('#diary-temp', 'Tab'); await wait(60);
+    check('日記: 気温を記録（全角も可）', await yp.evaluate(() => (db.diary[todayStr()] || {}).tp === '23.5'));
+    await yp.fill('#diary-temp', 'あつい'); await yp.press('#diary-temp', 'Tab'); await wait(60);
+    check('日記: 数字でない気温は保存しない', await yp.evaluate(() => (db.diary[todayStr()] || {}).tp === '23.5'));
+    await yp.evaluate(() => { db.entries.push({ id: 'tpd', date: todayStr(), type: 'expense', category: '食費', item: '', amount: 10, memo: '', account: '' }); saveDb(true); });
+    await yp.click('[data-view=list]');
+    check('日記: 一覧の日付に気温', (await text(yp, '#list-body')).includes('23.5℃'));
+    // 一覧入力
+    await yp.click('[data-view=input]'); await yp.click('#bulk-top-btn'); await yp.waitForSelector('#b-amount-0');
+    const n0 = await yp.evaluate(() => db.entries.length);
+    await yp.selectOption('#b-cat-0', '日用品'); await yp.fill('#b-amount-0', '398'); await yp.fill('#b-product-0', '洗剤');
+    await yp.click('#modal-box button:has-text("5行追加")');
+    check('一覧入力: 行を追加すると上の行を引き継ぐ', (await yp.$$('.bulk-row')).length === 10 && (await yp.inputValue('#b-cat-5')) === (await yp.inputValue('#b-cat-4')));
+    await yp.selectOption('#b-type-1', 'income');
+    check('一覧入力: 種別を変えると分類の選択肢も変わる', (await yp.$$eval('#b-cat-1 option', o => o.map(x => x.value))).includes('給与'));
+    await yp.fill('#b-amount-1', '5000'); await yp.fill('#b-memo-1', 'おこづかい');
+    await yp.fill('#b-amount-2', '100*3');
+    await yp.click('#bulk-save'); await wait(80);
+    const bulk = await yp.evaluate(n => db.entries.slice(n), n0);
+    check('一覧入力: 金額のある行だけまとめて保存', bulk.length === 3 && bulk[0].category === '日用品' && bulk[0].product === '洗剤' && bulk[0].amount === 398 && bulk[1].type === 'income' && bulk[1].memo === 'おこづかい' && bulk[2].amount === 300, JSON.stringify(bulk));
+    // 出納帳: 収入・支出の行にメモ
+    await yp.evaluate(() => { db.entries.push({ id: 'lm1', date: todayStr(), type: 'expense', category: '食費', item: '', amount: 120, memo: 'お昼のパン', account: '現金' }); saveDb(true); openLedger('現金'); });
+    check('出納帳: 収入・支出の行にメモを表示', (await text(yp, '#modal-box')).includes('食費 · お昼のパン'));
+    await yp.click('.modal-close');
+    check('年計表・資産・予定・一覧入力: JSエラーなし', yp.errors.length === 0, yp.errors.join(' / '));
+    await yp.context().close();
 
     // ── ダークモード ──
     const dark = await newPage(browser, { colorScheme: 'dark' });
