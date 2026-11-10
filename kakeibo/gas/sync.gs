@@ -25,9 +25,9 @@
 
 // 列は末尾にだけ追加する（既存のシートと列の位置を合わせるため）
 const COLS = ['id', 'date', 'type', 'category', 'item', 'amount', 'memo', 'account', 'toAccount', 'store', 'receiptId', 'ruleId', 'ruleMonth', 'autoPay', 'updatedAt', 'deleted', 'person', 'biz', 'product'];
-const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members', 'goals', 'companies'];
-// 家計簿アプリはこの値で「使った人」などに対応した版かを判断する
-const SYNC_VERSION = 3;
+const META_SECTIONS = ['categories', 'accounts', 'budgets', 'recurring', 'favorites', 'startDay', 'members', 'goals', 'companies', 'assets'];
+// 家計簿アプリはこの値で「使った人」（3）・「資産・負債」（4）などに対応した版かを判断する
+const SYNC_VERSION = 4;
 
 // シートが日付や数値に自動変換した値を文字列に戻す
 function asText_(v) {
