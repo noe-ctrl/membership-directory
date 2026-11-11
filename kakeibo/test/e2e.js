@@ -655,6 +655,34 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('年計表・資産・予定・一覧入力: JSエラーなし', yp.errors.length === 0, yp.errors.join(' / '));
     await yp.context().close();
 
+    // ── 家計分析（今月の状況など） ──
+    const an = await newPage(browser);
+    await an.evaluate(() => {
+      const t = todayStr(), from = periodRange(currentPeriod())[0], pm = addMonths(currentPeriod(), -1);
+      db.budgets.total = 100000; db.budgets.categories = { '食費': 30000 };
+      db.entries.push(
+        { id: 'a1', date: from, type: 'expense', category: '住居費', item: '', amount: 80000, memo: '家賃', account: '銀行口座', ruleId: 'r1', ruleMonth: currentPeriod() },
+        { id: 'a2', date: t, type: 'expense', category: '食費', item: '', amount: 40000, memo: '', account: '現金', store: 'スーパーA' },
+        { id: 'a3', date: periodRange(pm)[0], type: 'expense', category: '食費', item: '', amount: 5000, memo: '', account: '現金' });
+      saveDb(true);
+    });
+    await an.click('[data-view=report]'); await an.click('#rep-anal'); await wait(80);
+    const ms = await text(an, '#month-status');
+    check('分析: 今月の状況（予算超過）', ms.includes('今月の状況') && ms.includes('予算を ¥20,000 超えています') && ms.includes('支出（家計）¥120,000'), ms.slice(0, 300));
+    check('分析: 注意したい分類', ms.includes('食費') && ms.includes('予算超過 +¥10,000'), ms);
+    check('分析: 先月の同じ時期と比較', ms.includes('先月の同じ時期¥5,000'), ms);
+    const proj = await an.evaluate(() => { const st = monthStatus(currentPeriod()); return { st, exp: Math.round(80000 + 40000 / st.done * st.total) }; });
+    check('分析: 月末の見込みは定期収支を日割りしない', proj.st.projected === proj.exp, JSON.stringify(proj));
+    check('分析: 曜日別の支出', (await an.$$('#weekday-card .week-row')).length === 7, await text(an, '#weekday-card'));
+    check('分析: 支払方法別・お店別', (await text(an, '#pay-card')).includes('銀行口座') && (await text(an, '#store-card')).includes('スーパーA'));
+    check('分析: 大きな支出から定期収支を除く', !(await text(an, '#big-card')).includes('家賃') && (await text(an, '#big-card')).includes('食費'));
+    await an.click('[data-view=input]'); await an.click('[data-view=report]');
+    check('分析: 画面を移っても分析のまま', await an.evaluate(() => document.getElementById('rep-anal').className === 'on' && !!document.getElementById('month-status')));
+    await an.evaluate(() => { ui.month = addMonths(currentPeriod(), -1); render(); }); await wait(60);
+    check('分析: 過去の月は確定', (await text(an, '#month-status')).includes('確定'), await text(an, '#month-status'));
+    check('分析: JSエラーなし', an.errors.length === 0, an.errors.join(' / '));
+    await an.context().close();
+
     // ── ダークモード ──
     const dark = await newPage(browser, { colorScheme: 'dark' });
     await dark.fill('#in-amount', '500'); await dark.click('#save-btn');
@@ -1029,6 +1057,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     // ── 各画面がエラーなく描画 ──
     for (const v of ['calendar', 'budget', 'list', 'report']) { await page.click('[data-view=' + v + ']'); await wait(60); }
     await page.click('#rep-year'); await wait(60);
+    await page.click('#rep-anal'); await wait(60);
     const errs = [...page.errors, ...pageB.errors, ...dark.errors, ...uxErr, ...rpErr];
     check('JSエラーなし', errs.length === 0, errs.join(' / '));
   } finally {
