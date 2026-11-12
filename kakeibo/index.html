@@ -414,6 +414,13 @@
     .cal .d .dw { font-size: 10px; margin-left: 2px; }
     .week-row { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     .week-row:last-child { border-bottom: none; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
+    .stat-grid > div { background: var(--card2); border-radius: 12px; padding: 8px 10px; }
+    .stat-grid .k { font-size: 11px; color: var(--sub); font-weight: 700; }
+    .stat-grid .v { font-size: 16px; font-weight: 800; margin-top: 2px; }
+    .stat-grid .s { font-size: 11px; color: var(--sub); }
+    .status-msg { font-size: 14px; font-weight: 700; padding: 8px 12px; border-radius: 12px; background: var(--card2); margin-bottom: 4px; }
+    .status-msg.good { color: var(--income); } .status-msg.bad { color: var(--expense); }
     .wk-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
     .wk-top .n { font-weight: 700; }
     .day-diary { font-size: 12px; color: var(--sub); padding: 0 4px 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -589,6 +596,7 @@
     <div class="segment" style="margin-bottom:12px">
       <button id="rep-month" class="on" onclick="setReportMode('month')">月別</button>
       <button id="rep-year" onclick="setReportMode('year')">年間</button>
+      <button id="rep-anal" onclick="setReportMode('analysis')">分析</button>
     </div>
     <div id="report-body"></div>
   </section>
@@ -2040,12 +2048,13 @@ function setReportMode(m) {
   ui.reportMode = m;
   document.getElementById('rep-month').className = m === 'month' ? 'on' : '';
   document.getElementById('rep-year').className = m === 'year' ? 'on' : '';
+  document.getElementById('rep-anal').className = m === 'analysis' ? 'on' : '';
   render();
 }
 function setReportType(t) { ui.reportType = t; ui.reportOpen = null; renderReport(); }
 function toggleReportOpen(name) { ui.reportOpen = ui.reportOpen === name ? null : name; renderReport(); }
 function renderReport() {
-  document.getElementById('report-body').innerHTML = ui.reportMode === 'month' ? monthReportHtml() : yearReportHtml();
+  document.getElementById('report-body').innerHTML = ui.reportMode === 'month' ? monthReportHtml() : ui.reportMode === 'analysis' ? analysisHtml() : yearReportHtml();
 }
 function breakdown(list) {
   const map = new Map();
@@ -2209,6 +2218,104 @@ function yearReportHtml() {
   html += yearTableHtml(year, ui.reportType);
   html += '<div class="btn-row" style="margin-bottom:14px"><button class="btn secondary sm" onclick="printReport(\'year\')">🖨 この年を印刷・PDF</button></div>';
   return html;
+}
+/* ─── 家計分析（今月の状況・曜日別・支払方法別・お店別・大きな支出） ─── */
+// 期間の経過日数（過去の月は全日数、未来の月は0）
+function elapsedDays(ym) {
+  const [from, to] = periodRange(ym), t = todayStr(), total = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+  if (t > to) return { done: total, total };
+  if (t < from) return { done: 0, total };
+  return { done: Math.round((new Date(t) - new Date(from)) / 86400000) + 1, total };
+}
+function monthStatus(ym) {
+  const list = entriesInMonth(ym, 'home').filter(e => e.type === 'expense'); // 予算と同じく家計の支出で見る
+  const spent = list.reduce((s, e) => s + e.amount, 0);
+  const b = db.budgets.overrides[ym] || db.budgets;
+  const { done, total } = elapsedDays(ym);
+  // 前の月の同じ日数目までの支出
+  const [pFrom] = periodRange(addMonths(ym, -1)), pTo = addDays(pFrom, Math.max(0, done - 1));
+  const prevSame = done ? entriesInMonth(addMonths(ym, -1), 'home').filter(e => e.type === 'expense' && e.date <= pTo).reduce((s, e) => s + e.amount, 0) : 0;
+  // 月末の見込み: 定期収支（自動入力）は月初にまとめて入ることが多いので、日割りせずにそのまま足す
+  const fixed = list.filter(e => e.ruleId || e.autoPay).reduce((s, e) => s + e.amount, 0);
+  const projected = done ? Math.round(fixed + (spent - fixed) / done * total) : 0;
+  const byCat = {}; list.forEach(e => { const c = byCat[e.category] || (byCat[e.category] = { v: 0, f: 0 }); c.v += e.amount; if (e.ruleId || e.autoPay) c.f += e.amount; });
+  const risky = Object.keys(b.categories || {}).map(name => {
+    const c = byCat[name] || { v: 0, f: 0 }, bud = b.categories[name];
+    const proj = done ? Math.round(c.f + (c.v - c.f) / done * total) : 0;
+    return { name, bud, v: c.v, proj };
+  }).filter(r => r.bud && (r.v > r.bud || (done < total && r.proj > r.bud))).sort((x, y) => y.proj / y.bud - x.proj / x.bud);
+  return { spent, budget: b.total || 0, done, total, prevSame, projected, risky };
+}
+function analysisHtml() {
+  const ym = ui.month, st = monthStatus(ym), isCur = ym === currentPeriod(), past = ym < currentPeriod();
+  let h = '<div class="card" id="month-status"><div class="card-title"><span>' + (isCur ? '今月の状況' : fmtMonth(ym) + 'の状況') + '</span><span class="small">' + (st.done < st.total ? st.done + '日目 / ' + st.total + '日' : '確定') + '</span></div>';
+  if (st.budget) {
+    const pace = Math.round(st.budget * st.done / st.total), diff = st.spent - pace;
+    let msg, cls;
+    if (!st.done) { msg = 'まだ始まっていない月です'; cls = ''; }
+    else if (st.spent > st.budget) { msg = '予算を ' + fmtYen(st.spent - st.budget) + ' 超えています'; cls = 'bad'; }
+    else if (past) { msg = '予算内でした（' + fmtYen(st.budget - st.spent) + ' 残し）'; cls = 'good'; }
+    else if (st.projected > st.budget) { msg = 'このペースだと月末に予算を ' + fmtYen(st.projected - st.budget) + ' 超えそうです'; cls = 'bad'; }
+    else { msg = diff <= 0 ? '予算のペースより ' + fmtYen(-diff) + ' 少なく、順調です' : '予算のペースより ' + fmtYen(diff) + ' 多めですが、月末は予算内の見込みです'; cls = diff <= 0 ? 'good' : ''; }
+    h += '<div class="status-msg ' + cls + '">' + msg + '</div>';
+    const ratio = st.spent / st.budget;
+    h += '<div class="bar" style="height:10px;position:relative"><i class="' + (ratio >= 1 ? 'over' : ratio >= st.done / st.total ? 'warn' : 'ok') + '" style="width:' + Math.min(100, ratio * 100) + '%;background:' + (ratio >= 1 ? 'var(--s8)' : ratio >= st.done / st.total ? 'var(--s4)' : 'var(--s3)') + '"></i></div>'
+      + '<div class="small">支出 ' + fmtYen(st.spent) + ' / 予算 ' + fmtYen(st.budget) + '（' + Math.round(ratio * 100) + '%・経過日数は' + Math.round(st.done / st.total * 100) + '%）</div>';
+  } else {
+    h += '<div class="small" style="margin-bottom:6px">予算を決めると、予算に対する進み具合と見込みを表示します（予算の画面で設定）。</div>';
+  }
+  h += '<div class="stat-grid">'
+    + '<div><div class="k">支出（家計）</div><div class="v num exp">' + fmtYen(st.spent) + '</div><div class="s">1日あたり ' + fmtYen(st.done ? Math.round(st.spent / st.done) : 0) + '</div></div>'
+    + (st.done < st.total && st.done ? '<div><div class="k">月末の見込み</div><div class="v num">' + fmtYen(st.projected) + '</div><div class="s">今のペースで続いた場合</div></div>'
+      : '<div><div class="k">残りの予算</div><div class="v num' + (st.budget - st.spent < 0 ? ' exp' : '') + '">' + (st.budget ? fmtYen(st.budget - st.spent) : '—') + '</div><div class="s">' + (st.budget ? '予算 ' + fmtYen(st.budget) : '予算なし') + '</div></div>')
+    + (st.done ? '<div><div class="k">先月の同じ時期</div><div class="v num">' + fmtYen(st.prevSame) + '</div><div class="s">' + (st.prevSame ? '今月は ' + (st.spent >= st.prevSame ? '+' : '-') + fmtYen(Math.abs(st.spent - st.prevSame)) : '先月の記録なし') + '</div></div>' : '')
+    + (st.budget && st.done < st.total ? '<div><div class="k">残り' + (st.total - st.done) + '日で使える額</div><div class="v num' + (st.budget - st.spent < 0 ? ' exp' : '') + '">' + fmtYen(Math.max(0, st.budget - st.spent)) + '</div><div class="s">1日あたり ' + fmtYen(Math.max(0, Math.floor((st.budget - st.spent) / Math.max(1, st.total - st.done)))) + '</div></div>' : '')
+    + '</div>';
+  if (st.risky.length) {
+    h += '<div class="card-title" style="margin:12px 0 4px">注意したい分類</div>' + st.risky.map(r =>
+      '<div class="week-row"><div class="wk-top"><span class="n">' + esc(r.name) + '</span><span class="num exp">' + (r.v > r.bud ? '予算超過 +' + fmtYen(r.v - r.bud) : '見込み ' + fmtYen(r.proj) + '（予算 ' + fmtYen(r.bud) + '）') + '</span></div>'
+      + '<div class="bar"><i style="width:' + Math.min(100, r.v / r.bud * 100) + '%;background:var(--s8)"></i></div></div>').join('');
+  }
+  h += '<div class="hint">月末の見込みは、定期収支・カードの引き落とし以外の支出を今のペースで日割りして計算します。</div></div>';
+
+  // 曜日別（この月を含む直近3か月）
+  const wd = Array.from({ length: 7 }, () => ({ v: 0, days: new Set() }));
+  const days = new Map(); // 日付 → 曜日（期間内の全日数を数えるため）
+  for (let i = 2; i >= 0; i--) {
+    const m = addMonths(ym, -i), [from, to] = periodRange(m), lim = to < todayStr() ? to : todayStr();
+    for (let d = from; d <= lim; d = addDays(d, 1)) days.set(d, new Date(d + 'T00:00:00').getDay());
+    entriesInMonth(m).forEach(e => { if (e.type === 'expense' && !e.ruleId && !e.autoPay && days.has(e.date)) wd[days.get(e.date)].v += e.amount; });
+  }
+  days.forEach((w, d) => wd[w].days.add(d));
+  const avgs = wd.map(x => x.days.size ? Math.round(x.v / x.days.size) : 0), maxA = Math.max(1, ...avgs);
+  h += '<div class="card" id="weekday-card"><div class="card-title">曜日別の支出（1日平均）</div>' + '日月火水木金土'.split('').map((w, i) =>
+    '<div class="week-row"><div class="wk-top"><span class="n">' + w + '曜日</span><span class="num">' + fmtYen(avgs[i]) + '</span></div><div class="bar"><i style="width:' + (avgs[i] / maxA * 100) + '%;background:' + (avgs[i] === maxA ? colorExp() : 'var(--s3)') + '"></i></div></div>').join('')
+    + '<div class="hint">' + fmtMonth(addMonths(ym, -2)) + '〜' + fmtMonth(ym) + 'の支出（定期収支・引き落としを除く）を、その曜日の日数で割った金額です。</div></div>';
+
+  const list = entriesInMonth(ym).filter(e => e.type === 'expense'), total = list.reduce((s, e) => s + e.amount, 0);
+  const groupCard = (id, title, keyFn, icon, note, src) => {
+    const m = new Map(), base = src || list, total = base.reduce((s, e) => s + e.amount, 0); base.forEach(e => { const k = keyFn(e); m.set(k, (m.get(k) || { v: 0, n: 0 })); const x = m.get(k); x.v += e.amount; x.n++; });
+    const rows = [...m.entries()].sort((a, b) => b[1].v - a[1].v).slice(0, 8);
+    if (!rows.length) return '';
+    const max = Math.max(1, ...rows.map(r => r[1].v));
+    return '<div class="card" id="' + id + '"><div class="card-title">' + title + '</div>' + rows.map(([k, x]) =>
+      '<div class="week-row"><div class="wk-top"><span class="n">' + icon + esc(k) + ' <span class="small">' + x.n + '件</span></span><span class="num">' + fmtYen(x.v) + ' <span class="small">' + (total ? Math.round(x.v / total * 100) : 0) + '%</span></span></div>'
+      + '<div class="bar"><i style="width:' + (x.v / max * 100) + '%;background:var(--s3)"></i></div></div>').join('') + (note ? '<div class="hint">' + note + '</div>' : '') + '</div>';
+  };
+  h += groupCard('pay-card', '支払方法別の支出', e => e.account || '（指定なし）', '💳 ', '');
+  if (list.some(e => e.store)) h += groupCard('store-card', 'お店別の支出', e => e.store, '🏪 ', 'お店が記録された支出（レシート入力）だけで集計しています。', list.filter(e => e.store));
+  const big = list.filter(e => !e.ruleId && !e.autoPay).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  if (big.length) h += '<div class="card" id="big-card"><div class="card-title">大きな支出（定期収支を除く上位5件）</div>' + big.map(entryRow).join('') + '</div>';
+  if (list.length) {
+    const nDays = new Set(list.map(e => e.date)).size;
+    h += '<div class="card"><div class="card-title">支出の記録</div><div class="stat-grid">'
+      + '<div><div class="k">件数</div><div class="v num">' + list.length + '件</div></div>'
+      + '<div><div class="k">1件あたり</div><div class="v num">' + fmtYen(Math.round(total / list.length)) + '</div></div>'
+      + '<div><div class="k">支出のあった日</div><div class="v num">' + nDays + '日</div><div class="s">' + st.done + '日中</div></div>'
+      + '<div><div class="k">お金を使わなかった日</div><div class="v num">' + Math.max(0, st.done - new Set(list.filter(e => e.date <= todayStr()).map(e => e.date)).size) + '日</div></div>'
+      + '</div></div>';
+  }
+  return h;
 }
 function jumpMonth(ym) { ui.month = ym; setReportMode('month'); }
 // 年計表: 分類ごとに12か月の金額・年間合計・前年・前年比（分類の並びは設定の順）
