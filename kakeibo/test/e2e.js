@@ -409,12 +409,14 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await page.evaluate(d => {
       db.assets.push(sanitizeAsset({ id: 'as1', name: 'つみたてNISA', kind: 'asset', group: '株・投資信託', values: [{ d, v: 500000 }] }));
       db.plans.push(sanitizePlan({ id: 'plan-s1', date: d, time: '10:30', text: '同期する予定' }));
+      db.plans.push(sanitizePlan({ id: 'plan-s2', date: d, text: 'ゴミの日', repeat: 'weekly', skip: [addDays(d, 7)] }));
       db.diary[d] = { w: 'sun', t: '', tp: '21.5' }; saveDb(true);
     }, today);
     await openSettings(page); await page.click('text=今すぐ同期'); await wait(600);
     await pageB.click('text=今すぐ同期'); await wait(600);
-    const syB = await pageB.evaluate(d => ({ a: db.assets.map(a => a.name + ':' + assetValue(a)).join(','), p: db.plans.map(p => p.time + ' ' + p.text).join(','), tp: (db.diary[d] || {}).tp }), today);
+    const syB = await pageB.evaluate(d => ({ a: db.assets.map(a => a.name + ':' + assetValue(a)).join(','), p: db.plans.filter(p => !p.repeat).map(p => p.time + ' ' + p.text).join(','), r: db.plans.find(p => p.repeat), tp: (db.diary[d] || {}).tp }), today);
     check('資産・負債・予定・気温が他の端末に同期される', syB.a === 'つみたてNISA:500000' && syB.p === '10:30 同期する予定' && syB.tp === '21.5', JSON.stringify(syB));
+    check('繰り返しの予定と「この日だけ削除」も同期される', syB.r && syB.r.repeat === 'weekly' && syB.r.skip && syB.r.skip.length === 1, JSON.stringify(syB.r));
     await pageB.evaluate(d => { db.plans = []; delete db.diary[d]; saveDb(true); }, today);
     await pageB.click('text=今すぐ同期'); await wait(600);
     await page.click('text=今すぐ同期'); await wait(600);
@@ -627,6 +629,22 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await yp.click('[data-view=calendar]'); // 今日を選んだまま
     await yp.click('.plan-row:has-text("歯医者") button'); await wait(60);
     check('予定: 削除', !(await text(yp, '#cal-day-entries')).includes('歯医者'));
+    // 予定の編集と繰り返し
+    await yp.click('#cal-day-entries .plan-row:has-text("牛乳を買う")'); await yp.waitForSelector('#m-pl-text');
+    await yp.fill('#m-pl-text', '牛乳とパンを買う'); await yp.selectOption('#m-pl-repeat', 'weekly'); await yp.fill('#m-pl-time', '18:00');
+    await yp.click('#modal-box button:has-text("保存する")'); await wait(60);
+    const rpl = await yp.evaluate(() => { const p = db.plans.find(x => x.text === '牛乳とパンを買う'); const t = todayStr(); return { p, w1: planOccurs(p, addDays(t, 7)), w2: planOccurs(p, addDays(t, 14)), d1: planOccurs(p, addDays(t, 1)), past: planOccurs(p, addDays(t, -7)) }; });
+    check('予定: 編集して毎週の繰り返しに', rpl.p && rpl.p.repeat === 'weekly' && rpl.p.time === '18:00' && rpl.w1 && rpl.w2 && !rpl.d1 && !rpl.past, JSON.stringify(rpl));
+    check('予定: 繰り返しの表示', (await text(yp, '#cal-day-entries')).includes('🔁毎週'), await text(yp, '#cal-day-entries'));
+    await yp.evaluate(() => { const p = db.plans.find(x => x.text === '牛乳とパンを買う'); openPlan(p.id, addDays(todayStr(), 7)); });
+    await yp.click('#modal-box button:has-text("だけ削除")'); await wait(60);
+    const sk = await yp.evaluate(() => { const p = db.plans.find(x => x.text === '牛乳とパンを買う'); const t = todayStr(); return { skip: p.skip, w1: planOccurs(p, addDays(t, 7)), w2: planOccurs(p, addDays(t, 14)) }; });
+    check('予定: 繰り返しのうちこの日だけ削除', !sk.w1 && sk.w2 && sk.skip.length === 1, JSON.stringify(sk));
+    await yp.evaluate(() => { db.plans.push(sanitizePlan({ date: '2026-01-31', text: '月末の支払い', repeat: 'monthly' }), sanitizePlan({ date: '2020-03-03', text: '誕生日', repeat: 'yearly' })); saveDb(true); });
+    check('予定: 毎月・毎年の繰り返し（31日がない月は表示しない）', await yp.evaluate(() => { const m = db.plans.find(p => p.text === '月末の支払い'), y = db.plans.find(p => p.text === '誕生日'); return planOccurs(m, '2026-03-31') && !planOccurs(m, '2026-04-30') && planOccurs(y, '2027-03-03') && !planOccurs(y, '2027-03-04'); }));
+    await yp.evaluate(() => { const p = db.plans.find(x => x.text === '牛乳とパンを買う'); openPlan(p.id, todayStr()); });
+    await yp.click('#modal-box button:has-text("すべて削除")'); await wait(60);
+    check('予定: 繰り返しの予定をすべて削除', await yp.evaluate(() => !db.plans.some(x => x.text === '牛乳とパンを買う')));
     // 日記の気温
     await yp.fill('#diary-temp', '２３．５'); await yp.press('#diary-temp', 'Tab'); await wait(60);
     check('日記: 気温を記録（全角も可）', await yp.evaluate(() => (db.diary[todayStr()] || {}).tp === '23.5'));
@@ -654,6 +672,24 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await yp.click('.modal-close');
     check('年計表・資産・予定・一覧入力: JSエラーなし', yp.errors.length === 0, yp.errors.join(' / '));
     await yp.context().close();
+
+    // ── データを失わないための案内 ──
+    const ios = await newPage(browser, { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1' });
+    await ios.evaluate(() => { db.entries.push({ id: 'io1', date: todayStr(), type: 'expense', category: '食費', item: '', amount: 100, memo: '', account: '' }); saveDb(true); renderBackupNote(); });
+    check('iPhoneのSafariではホーム画面への追加を案内', (await text(ios, '#backup-note')).includes('ホーム画面に追加'), await text(ios, '#backup-note'));
+    await ios.click('#backup-note button:has-text("閉じる")');
+    await ios.evaluate(() => renderBackupNote());
+    check('ホーム画面の案内は閉じたら出さない', !(await text(ios, '#backup-note')).includes('ホーム画面に追加'));
+    await ios.evaluate(() => { const c = db.settings.sync; c.url = 'https://example.invalid/exec'; c.key = 'k'; c.lastSyncAt = Date.now() - 9 * 86400000; c.lastResult = 'エラー: 通信エラー (500)'; saveDb(true); renderBackupNote(); });
+    const stale = await text(ios, '#backup-note');
+    check('同期が7日以上できていないと案内', stale.includes('同期が9日できていません') && stale.includes('通信エラー'), stale);
+    await openSettings(ios);
+    check('同期キーが暗号化されていないことを設定画面で案内', (await text(ios, '#pin-status')).includes('暗号化せずに保存されています'), await text(ios, '#pin-status'));
+    const nb = await newPage(browser);
+    await nb.evaluate(() => { for (let i = 0; i < 12; i++) db.entries.push({ id: 'nb' + i, date: addDays(todayStr(), -20), type: 'expense', category: '食費', item: '', amount: 100, memo: '', account: '' }); db.settings.lastBackupAt = Date.now() - 15 * 86400000; saveDb(true); renderBackupNote(); });
+    check('同期していない端末は14日でバックアップを案内', (await text(nb, '#backup-note')).includes('最後のバックアップから15日'), await text(nb, '#backup-note'));
+    check('データを失わないための案内: JSエラーなし', ios.errors.length === 0 && nb.errors.length === 0, [...ios.errors, ...nb.errors].join(' / '));
+    await ios.context().close(); await nb.context().close();
 
     // ── 家計分析（今月の状況など） ──
     const an = await newPage(browser);
