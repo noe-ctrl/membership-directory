@@ -460,7 +460,7 @@
       #print-area tr { page-break-inside: avoid; }
       #print-area th, #print-area td { border-bottom: .5pt solid #ccc; padding: 1.2mm 1.5mm; text-align: left; vertical-align: top; }
       #print-area th { background: #f2f2f2; font-size: 9pt; }
-      #print-area table.ytbl th, #print-area table.ytbl td { font-size: 7.5pt; padding: .8mm .8mm; }
+      #print-area table.ytbl th, #print-area table.ytbl td { font-size: 8.5pt; padding: .8mm 1mm; }
       #print-area td.r, #print-area th.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
       #print-area tr.sub td { color: #555; font-size: 9pt; }
       #print-area tr.sub td:first-child { padding-left: 6mm; }
@@ -527,6 +527,11 @@
           <input id="in-product" class="input" type="text" list="product-history" placeholder="例: 牛乳、ティッシュ" autocomplete="off">
           <datalist id="product-history"></datalist>
         </div>
+        <div class="field">
+          <label>お店（任意）</label>
+          <input id="in-store" class="input" type="text" list="store-history" placeholder="例: ○○スーパー" autocomplete="off">
+          <datalist id="store-history"></datalist>
+        </div>
       </div>
       <div id="in-transferblock" class="row2" style="display:none">
         <div class="field">
@@ -573,7 +578,7 @@
     <div id="acct-card"></div>
     <div class="summary" id="list-summary"></div>
     <div class="search-row">
-      <input id="list-q" class="input" type="search" placeholder="分類・項目・メモ・店名で検索" oninput="renderList()">
+      <input id="list-q" class="input" type="search" placeholder="分類・項目・メモ・店名・日記・予定で検索" oninput="renderList()">
       <button class="btn secondary sm" id="filter-btn" onclick="toggleFilter()">絞り込み</button>
     </div>
     <div class="card" id="filter-panel" style="display:none"></div>
@@ -1351,7 +1356,6 @@ function presetAccount() {
 }
 function renderInput() {
   renderPlanNote();
-  document.getElementById('bulk-top-btn').style.display = ui.entryType === 'transfer' ? 'none' : '';
   const dateEl = document.getElementById('in-date');
   if (!dateEl.value) dateEl.value = todayStr();
   const isTr = ui.entryType === 'transfer';
@@ -1384,6 +1388,7 @@ function renderInput() {
     '<button class="chip' + (it === ui.entryItem ? ' on' : '') + '" onclick="pickItem(this.dataset.n)" data-n="' + esc(it) + '">' + esc(it) + '</button>').join('')
     + (cat ? '<button class="chip add-chip" onclick="addItemQuick()">＋ 項目を追加</button>' : '');
   document.getElementById('product-history').innerHTML = knownProducts().slice(0, 200).map(x => '<option value="' + esc(x) + '"></option>').join('');
+  document.getElementById('store-history').innerHTML = knownStores().map(x => '<option value="' + esc(x) + '"></option>').join('');
   renderFavorites();
   renderBackupNote();
   renderDayEntries();
@@ -1502,6 +1507,7 @@ function saveEntry() {
       account: document.getElementById('in-account').value
     };
     if (product) e.product = product;
+    const store = document.getElementById('in-store').value.trim(); if (store) e.store = store.slice(0, 60);
     ensureCategory(e.type, e.category);
     db.settings.lastAccount[e.type] = e.account;
     if (db.members.length && ui.entryPerson) e.person = ui.entryPerson;
@@ -1515,6 +1521,7 @@ function saveEntry() {
   ui.entryItem = '';
   document.getElementById('in-product').value = '';
   document.getElementById('in-memo').value = '';
+  document.getElementById('in-store').value = '';
   toast(typeLabel(e.type) + ' ' + fmtYen(e.amount) + ' を保存しました');
   renderInput();
 }
@@ -1658,9 +1665,23 @@ function renderList() {
     note = '<div class="small" style="margin-bottom:6px">' + esc(scope) + 'の検索結果: ' + list.length.toLocaleString() + '件（上の合計は検索結果の合計）' + (list.length > 300 ? '・新しい300件を表示' : '') + '</div>';
     if (list.length > 300) shown = sortEntries(list).slice(0, 300);
   }
-  document.getElementById('list-body').innerHTML = note + (shown.length ? groupedByDay(shown)
+  document.getElementById('list-body').innerHTML = textHitsHtml() + note + (shown.length ? groupedByDay(shown)
     : '<div class="empty">' + (active ? '該当する明細がありません' : 'この月の入力はありません') + '</div>');
 }
+// キーワード検索のとき、同じ期間の日記と予定からも探す（タップでカレンダーのその日へ）
+function textHitsHtml() {
+  const q = (document.getElementById('list-q').value || '').trim().toLowerCase(); if (!q) return '';
+  const f = ui.filter, inPeriod = ds => f.period === 'all' ? true : f.period === 'range' ? (!f.from || ds >= f.from) && (!f.to || ds <= f.to) : periodOf(ds) === ui.month;
+  const hits = [];
+  Object.keys(db.diary).forEach(ds => { const t = db.diary[ds].t || ''; if (inPeriod(ds) && t.toLowerCase().includes(q)) hits.push({ ds, icon: '📝', text: t }); });
+  db.plans.forEach(p => { if (p.text.toLowerCase().includes(q) && (p.repeat || inPeriod(p.date))) hits.push({ ds: p.date, icon: '📌', text: (p.time ? p.time + ' ' : '') + p.text + (p.repeat ? '（🔁' + planRepeatLabel(p) + '）' : '') }); });
+  if (!hits.length) return '';
+  hits.sort((a, b) => (a.ds < b.ds ? 1 : -1));
+  const snip = t => { const i = t.toLowerCase().indexOf(q), a = Math.max(0, i - 20); return (a ? '…' : '') + t.slice(a, a + 60) + (t.length > a + 60 ? '…' : ''); };
+  return '<div class="card" id="text-hits" style="padding:10px 16px"><div class="card-title" style="margin-bottom:2px">日記・予定の検索結果（' + hits.length + '件）</div>'
+    + hits.slice(0, 30).map(h => '<div class="plan-row link" onclick="jumpDay(\'' + h.ds + '\')"><span class="dt">' + Number(h.ds.slice(5, 7)) + '/' + Number(h.ds.slice(8)) + '</span><span class="tx">' + h.icon + ' ' + esc(snip(h.text)) + '</span></div>').join('') + '</div>';
+}
+function jumpDay(ds) { ui.month = periodOf(ds); ui.selectedDay = ds; showView('calendar'); }
 function accountCardHtml() {
   if (!db.accounts.length) return '';
   const rows = db.accounts.map(a => ({ name: a.name, bal: accountBalance(a.name) }));
@@ -1874,8 +1895,19 @@ function deleteAsset(id) {
 function openNetWorth() {
   const rows = []; let max = 1;
   for (let i = 11; i >= 0; i--) { const ym = addMonths(currentPeriod(), -i), to = periodRange(ym)[1], nw = netWorth(to); rows.push(Object.assign({ ym }, nw)); max = Math.max(max, Math.abs(nw.net)); }
-  openModal('純資産の推移',
-    '<div class="table-wrap"><table class="table"><thead><tr><th>月末</th><th>口座</th><th>資産</th><th>負債</th><th>純資産</th></tr></thead><tbody>'
+  const lo = Math.min(0, ...rows.map(r => r.net)), hi = Math.max(0, ...rows.map(r => r.net)), span = (hi - lo) || 1;
+  const W = 640, H = 200, padB = 30, top = 10, bw = W / 12, y = v => top + (H - padB - top) * (hi - v) / span;
+  let svg = '<svg class="yearchart" id="nw-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="純資産の推移">'
+    + '<line x1="0" x2="' + W + '" y1="' + y(0) + '" y2="' + y(0) + '" style="stroke:var(--line)"/>';
+  rows.forEach((r, i) => {
+    const y0 = y(Math.max(0, r.net)), h = Math.abs(y(r.net) - y(0));
+    if (r.net) svg += '<rect x="' + (i * bw + 8) + '" y="' + y0 + '" width="' + (bw - 16) + '" height="' + Math.max(1, h) + '" rx="3" fill="' + (r.net < 0 ? colorExp() : 'var(--s3)') + '"><title>' + fmtMonth(r.ym) + ' ' + fmtYen(r.net) + '</title></rect>';
+    svg += '<text x="' + (i * bw + bw / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="20" style="fill:var(--muted)">' + Number(r.ym.slice(5)) + '</text>';
+  });
+  svg += '</svg>';
+  const first = rows[0].net, last = rows[rows.length - 1].net;
+  openModal('純資産の推移', svg + '<div class="small num" style="margin:4px 0 10px">12か月で ' + (last - first >= 0 ? '+' : '-') + fmtYen(Math.abs(last - first)) + '</div>'
+    + '<div class="table-wrap"><table class="table"><thead><tr><th>月末</th><th>口座</th><th>資産</th><th>負債</th><th>純資産</th></tr></thead><tbody>'
     + rows.map(r => '<tr><td>' + fmtMonth(r.ym) + '</td><td class="num">' + fmtYen(r.acct) + '</td><td class="num">' + fmtYen(r.asset) + '</td><td class="num exp">' + (r.debt ? '-' + fmtYen(r.debt) : '¥0') + '</td><td class="num' + (r.net < 0 ? ' exp' : '') + '"><b>' + fmtYen(r.net) + '</b></td></tr>').join('')
     + '</tbody></table></div>'
     + '<div class="hint">各月の期末時点の値です。資産・負債はその日までの最後の記録を使います（記録より前の月は0円）。</div>');
@@ -1951,31 +1983,35 @@ function renderPlanNote() {
 
 /* ─── 一覧入力（表でまとめて入力） ─── */
 function bulkRowHtml(i, p) {
-  const type = p.type === 'income' ? 'income' : 'expense', cats = catsOf(type);
+  const type = p.type === 'income' ? 'income' : p.type === 'transfer' ? 'transfer' : 'expense', isTr = type === 'transfer';
+  const cats = catsOf(isTr ? 'expense' : type), hide = isTr ? ' style="display:none"' : '';
   const cat = cats.find(c => c.name === p.category) ? p.category : (cats[0] || {}).name || '';
   return '<div class="bulk-row" data-i="' + i + '"><div class="no">' + (i + 1) + '行目</div>'
     + '<input id="b-date-' + i + '" class="input" type="date" value="' + esc(p.date || todayStr()) + '" aria-label="日付">'
-    + '<select id="b-type-' + i + '" class="select" onchange="bulkTypeChanged(' + i + ')" aria-label="種別"><option value="expense"' + (type === 'expense' ? ' selected' : '') + '>支出</option><option value="income"' + (type === 'income' ? ' selected' : '') + '>収入</option></select>'
-    + '<select id="b-cat-' + i + '" class="select" onchange="bulkCatChanged(' + i + ')" aria-label="分類">' + catOptions(type, cat) + '</select>'
-    + '<select id="b-item-' + i + '" class="select" aria-label="項目">' + itemSelectOptions(type, cat, '') + '</select>'
+    + '<select id="b-type-' + i + '" class="select" onchange="bulkTypeChanged(' + i + ')" aria-label="種別">' + [['expense', '支出'], ['income', '収入'], ['transfer', '振替']].map(([k, n]) => '<option value="' + k + '"' + (type === k ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>'
+    + '<select id="b-cat-' + i + '" class="select" onchange="bulkCatChanged(' + i + ')" aria-label="分類"' + hide + '>' + catOptions(isTr ? 'expense' : type, cat) + '</select>'
+    + '<select id="b-item-' + i + '" class="select" aria-label="項目"' + hide + '>' + itemSelectOptions(isTr ? 'expense' : type, cat, '') + '</select>'
     + '<input id="b-amount-' + i + '" class="input amount" type="text" inputmode="numeric" placeholder="金額" autocomplete="off" aria-label="金額">'
-    + '<select id="b-account-' + i + '" class="select" aria-label="支払方法・口座">' + accountOptions(p.account || '', true) + '</select>'
-    + '<input id="b-product-' + i + '" class="input" list="product-history" placeholder="商品名（任意）" autocomplete="off" aria-label="商品名">'
+    + '<select id="b-account-' + i + '" class="select" aria-label="支払方法・口座（振替元）">' + accountOptions(p.account || '', true).replace('（指定なし）', isTr ? '振替元を選択' : '（指定なし）') + '</select>'
+    + '<select id="b-to-' + i + '" class="select" aria-label="振替先"' + (isTr ? '' : ' style="display:none"') + '><option value="">振替先を選択</option>' + accountOptions(p.to || '', false) + '</select>'
+    + (db.members.length ? '<select id="b-person-' + i + '" class="select" aria-label="使った人"' + hide + '><option value="">使った人（なし）</option>' + db.members.map(m => '<option value="' + esc(m) + '"' + (m === p.person ? ' selected' : '') + '>👤 ' + esc(m) + '</option>').join('') + '</select>' : '')
+    + (db.companies.length ? '<select id="b-biz-' + i + '" class="select" aria-label="家計／事業"' + hide + '>' + bizOptions(p.biz || '') + '</select>' : '')
+    + '<input id="b-product-' + i + '" class="input" list="product-history" placeholder="商品名（任意）" autocomplete="off" aria-label="商品名"' + hide + '>'
     + '<input id="b-memo-' + i + '" class="input" placeholder="メモ（任意）" autocomplete="off" aria-label="メモ"></div>';
 }
 function readBulkRow(i) {
   const g = k => { const el = document.getElementById('b-' + k + '-' + i); return el ? el.value : ''; };
-  return { date: g('date'), type: g('type'), category: g('cat'), item: g('item'), amount: g('amount'), account: g('account'), product: g('product').trim(), memo: g('memo').trim() };
+  return { date: g('date'), type: g('type'), category: g('cat'), item: g('item'), amount: g('amount'), account: g('account'), to: g('to'), person: g('person'), biz: g('biz'), product: g('product').trim(), memo: g('memo').trim() };
 }
 function openBulk() {
   ui.bulkN = 0;
   const date = document.getElementById('in-date').value || todayStr();
   openModal('一覧入力',
-    '<div class="hint" style="margin-top:0">1行に1件ずつ入力し、最後にまとめて保存します。金額が空の行は保存しません。新しい行は上の行の日付・種別・分類・口座を引き継ぎます。</div>'
+    '<div class="hint" style="margin-top:0">1行に1件ずつ入力し、最後にまとめて保存します。金額が空の行は保存しません。新しい行は上の行の日付・種別・分類・口座' + (db.members.length ? '・使った人' : '') + (db.companies.length ? '・家計／事業' : '') + 'を引き継ぎます。</div>'
     + '<div id="bulk-rows"></div>'
     + '<div class="btn-row"><button class="btn secondary sm" onclick="addBulkRows(5)">＋ 5行追加</button></div>'
     + '<button class="btn" id="bulk-save" onclick="saveBulk()">まとめて保存</button>');
-  addBulkRows(5, { date, type: ui.entryType === 'income' ? 'income' : 'expense', category: ui.entryCat || '', account: db.settings.lastAccount[ui.entryType === 'income' ? 'income' : 'expense'] || '' });
+  addBulkRows(5, { date, type: ui.entryType === 'income' ? 'income' : 'expense', category: ui.entryCat || '', account: db.settings.lastAccount[ui.entryType === 'income' ? 'income' : 'expense'] || '', person: ui.entryPerson || '', biz: db.companies.includes(db.settings.lastBiz) ? db.settings.lastBiz : '' });
 }
 function addBulkRows(n, first) {
   const box = document.getElementById('bulk-rows'); if (!box) return;
@@ -1986,7 +2022,11 @@ function addBulkRows(n, first) {
   }
 }
 function bulkTypeChanged(i) {
-  const type = document.getElementById('b-type-' + i).value;
+  const type = document.getElementById('b-type-' + i).value, isTr = type === 'transfer';
+  ['cat', 'item', 'person', 'biz', 'product'].forEach(k => { const el = document.getElementById('b-' + k + '-' + i); if (el) el.style.display = isTr ? 'none' : ''; });
+  document.getElementById('b-to-' + i).style.display = isTr ? '' : 'none';
+  const acc = document.getElementById('b-account-' + i); if (acc.options[0] && !acc.options[0].value) acc.options[0].textContent = isTr ? '振替元を選択' : '（指定なし）';
+  if (isTr) return;
   document.getElementById('b-cat-' + i).innerHTML = catOptions(type, '');
   bulkCatChanged(i);
 }
@@ -2001,14 +2041,22 @@ function saveBulk() {
     const amount = calcAmount(r.amount);
     if (amount == null || amount === 0) { toast((i + 1) + '行目の金額を確認してください'); document.getElementById('b-amount-' + i).focus(); return; }
     if (!r.date) { toast((i + 1) + '行目の日付を入力してください'); return; }
+    if (r.type === 'transfer') {
+      if (!r.account || !r.to) { toast((i + 1) + '行目の振替元と振替先を選択してください'); return; }
+      if (r.account === r.to) { toast((i + 1) + '行目の振替元と振替先が同じです'); return; }
+      add.push({ id: uid(), date: r.date, type: 'transfer', category: '振替', item: '', amount: Math.abs(amount), memo: r.memo, account: r.account, toAccount: r.to });
+      continue;
+    }
     if (!r.category) { toast((i + 1) + '行目の分類を選択してください'); return; }
     const type = r.type === 'income' ? 'income' : 'expense';
     const e = { id: uid(), date: r.date, type, category: r.category, item: isRegisteredItem(type, r.category, r.item) ? r.item : '', amount: Math.abs(amount), memo: r.memo, account: r.account };
     if (r.product) e.product = r.product.slice(0, 80);
+    if (r.person && db.members.includes(r.person)) e.person = r.person;
+    if (r.biz && db.companies.includes(r.biz)) e.biz = r.biz;
     add.push(e);
   }
   if (!add.length) { toast('金額を入力した行がありません'); return; }
-  add.forEach(e => { ensureCategory(e.type, e.category); db.entries.push(e); });
+  add.forEach(e => { if (e.type !== 'transfer') ensureCategory(e.type, e.category); db.entries.push(e); });
   saveDb(); closeModal(); render();
   toast(add.length + '件を保存しました');
 }
@@ -2462,7 +2510,8 @@ function printReport(kind) {
     const year = ui.month.slice(0, 4);
     const months = []; for (let m = 1; m <= 12; m++) { const ym = year + '-' + pad2(m); const l = entriesInMonth(ym); months.push({ m, list: l, inc: sumBy(l, 'income'), ex: sumBy(l, 'expense') }); }
     const all = months.flatMap(x => x.list), tInc = sumBy(all, 'income'), tEx = sumBy(all, 'expense');
-    html = '<h1>' + year + '年の家計簿' + (ui.scope !== 'home' ? '（' + esc(scopeLabel()) + '）' : '') + '</h1>' + meta + printSummary(tInc, tEx)
+    html = '<style>@page { size: A4 landscape; }</style>' // 年計表（16列）が読める大きさで入るように横向き
+      + '<h1>' + year + '年の家計簿' + (ui.scope !== 'home' ? '（' + esc(scopeLabel()) + '）' : '') + '</h1>' + meta + printSummary(tInc, tEx)
       + '<h2>月別の収支</h2><table><tr><th>月</th><th class="r">収入</th><th class="r">支出</th><th class="r">収支</th></tr>'
       + months.map(x => '<tr><td>' + x.m + '月</td><td class="r">' + fmtYen(x.inc) + '</td><td class="r">' + fmtYen(x.ex) + '</td><td class="r' + (x.inc - x.ex < 0 ? ' exp' : '') + '">' + fmtYen(x.inc - x.ex) + '</td></tr>').join('')
       + '<tr class="total"><td>合計</td><td class="r">' + fmtYen(tInc) + '</td><td class="r">' + fmtYen(tEx) + '</td><td class="r">' + fmtYen(tInc - tEx) + '</td></tr></table>'
