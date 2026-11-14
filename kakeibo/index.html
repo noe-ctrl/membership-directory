@@ -347,11 +347,13 @@
     .plan-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line2); font-size: 14px; }
     .plan-row .tm { font-variant-numeric: tabular-nums; color: var(--sub); min-width: 44px; font-size: 13px; }
     .plan-row .tx { flex: 1; overflow-wrap: anywhere; }
+    .plan-row.link { cursor: pointer; }
+    #backup-note .note .btn { flex: none; white-space: nowrap; }
     .plan-row .dt { color: var(--sub); font-size: 12px; min-width: 34px; font-weight: 700; }
-    .plan-add { display: flex; gap: 6px; margin-top: 8px; }
+    .plan-add { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .plan-add .input { padding: 8px 10px; font-size: 14px; }
     .plan-add input[type=time] { width: 110px; flex: none; }
-    .plan-add #plan-text { flex: 1; min-width: 0; }
+    .plan-add #plan-text { flex: 1 1 100%; min-width: 0; order: -1; }
     .plan-add .btn { flex: none; white-space: nowrap; }
     .bulk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line2); }
     .bulk-row .input, .bulk-row .select { padding: 8px 10px; font-size: 14px; }
@@ -936,6 +938,7 @@ function normalizeDb(data) {
       ocrKey: String(d.settings && d.settings.ocrKey || ''),
       encrypt: !!(d.settings && d.settings.encrypt),
       lastBackupAt: num0(d.settings && d.settings.lastBackupAt),
+      iosNoteHidden: !!(d.settings && d.settings.iosNoteHidden),
       lastPerson: String(d.settings && d.settings.lastPerson || ''),
       lastBiz: String(d.settings && d.settings.lastBiz || ''),
       lastAccount: { expense: String(d.settings && d.settings.lastAccount && d.settings.lastAccount.expense || ''), income: String(d.settings && d.settings.lastAccount && d.settings.lastAccount.income || '') },
@@ -992,10 +995,27 @@ function sanitizeAsset(a) {
     values: [...vals.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1)).slice(-600).map(([d, v]) => ({ d, v })) };
 }
 // 予定: 日付・時刻（任意）・内容
+// repeat: 繰り返し（毎週・毎月・毎年）。skip: 繰り返しのうち「この日だけ削除」した日
+const PLAN_REPEATS = [['', 'くり返さない'], ['weekly', '毎週'], ['monthly', '毎月'], ['yearly', '毎年']];
 function sanitizePlan(p) {
   if (!p || !/^\d{4}-\d{2}-\d{2}$/.test(String(p.date || '')) || !String(p.text || '').trim()) return null;
   const id = String(p.id || ''), time = String(p.time || '');
-  return { id: /^plan-[A-Za-z0-9_-]{1,40}$/.test(id) ? id : 'plan-' + uid(), date: p.date, time: /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : '', text: String(p.text).trim().slice(0, 200) };
+  const o = { id: /^plan-[A-Za-z0-9_-]{1,40}$/.test(id) ? id : 'plan-' + uid(), date: p.date, time: /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : '', text: String(p.text).trim().slice(0, 200) };
+  if (PLAN_REPEATS.some(r => r[0] && r[0] === p.repeat)) {
+    o.repeat = p.repeat;
+    const skip = (Array.isArray(p.skip) ? p.skip : String(p.skip || '').split(',')).map(String).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d > p.date);
+    if (skip.length) o.skip = [...new Set(skip)].sort().slice(-200);
+  }
+  return o;
+}
+// その日に予定があるか（繰り返しを含む）
+function planOccurs(p, ds) {
+  if (ds === p.date) return true;
+  if (!p.repeat || ds < p.date || (p.skip && p.skip.includes(ds))) return false;
+  if (p.repeat === 'weekly') return Math.round((new Date(ds) - new Date(p.date)) / 86400000) % 7 === 0;
+  if (p.repeat === 'monthly') return ds.slice(8) === p.date.slice(8);
+  if (p.repeat === 'yearly') return ds.slice(5) === p.date.slice(5);
+  return false;
 }
 function sanitizeDiary(d) {
   const out = {};
@@ -1862,23 +1882,63 @@ function openNetWorth() {
 }
 
 /* ─── 予定 ───────────────────────────── */
-function plansOn(ds) { return db.plans.filter(p => p.date === ds).sort((a, b) => (a.time || '99') < (b.time || '99') ? -1 : (a.time || '99') > (b.time || '99') ? 1 : 0); }
+function plansOn(ds) { return db.plans.filter(p => planOccurs(p, ds)).sort((a, b) => (a.time || '99') < (b.time || '99') ? -1 : (a.time || '99') > (b.time || '99') ? 1 : 0); }
 function plansHtml(ds) {
   const list = plansOn(ds);
   return '<div class="plans"><div class="card-title" style="margin:14px 0 4px">予定</div>'
-    + list.map(p => '<div class="plan-row"><span class="tm">' + (p.time || '—') + '</span><span class="tx">' + esc(p.text) + '</span><button class="btn secondary sm" onclick="deletePlan(\'' + p.id + '\')" aria-label="この予定を削除">×</button></div>').join('')
-    + '<div class="plan-add"><input id="plan-time" class="input" type="time" aria-label="時刻（任意）"><input id="plan-text" class="input" maxlength="200" placeholder="予定を追加（例: 歯医者、給料日）" onkeydown="if (event.key === \'Enter\') addPlan(\'' + ds + '\')"><button class="btn secondary sm" onclick="addPlan(\'' + ds + '\')">追加</button></div></div>';
+    + list.map(p => '<div class="plan-row link" onclick="openPlan(\'' + p.id + '\', \'' + ds + '\')" title="タップして編集"><span class="tm">' + (p.time || '—') + '</span><span class="tx">' + esc(p.text) + (p.repeat ? ' <span class="small">🔁' + planRepeatLabel(p) + '</span>' : '') + '</span>'
+      + '<button class="btn secondary sm" onclick="event.stopPropagation(); deletePlan(\'' + p.id + '\', \'' + ds + '\')" aria-label="この予定を削除">×</button></div>').join('')
+    + '<div class="plan-add"><input id="plan-time" class="input" type="time" aria-label="時刻（任意）"><input id="plan-text" class="input" maxlength="200" placeholder="予定を追加（例: 歯医者、給料日）" onkeydown="if (event.key === \'Enter\') addPlan(\'' + ds + '\')">'
+    + '<select id="plan-repeat" class="select" aria-label="くり返し" style="width:auto;flex:none;padding:8px 26px 8px 8px;font-size:13px">' + PLAN_REPEATS.map(([k, n]) => '<option value="' + k + '">' + (k ? n : '1回') + '</option>').join('') + '</select>'
+    + '<button class="btn secondary sm" onclick="addPlan(\'' + ds + '\')">追加</button></div></div>';
+}
+function planRepeatLabel(p) {
+  if (p.repeat === 'weekly') return '毎週' + '日月火水木金土'[new Date(p.date + 'T00:00:00').getDay()] + '曜';
+  if (p.repeat === 'monthly') return '毎月' + Number(p.date.slice(8)) + '日';
+  if (p.repeat === 'yearly') return '毎年' + Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8));
+  return '';
+}
+function openPlan(id, ds) {
+  const p = db.plans.find(x => x.id === id); if (!p) return;
+  openModal('予定を編集',
+    '<div class="row2"><div class="field"><label>' + (p.repeat ? '開始日' : '日付') + '</label><input id="m-pl-date" class="input" type="date" value="' + p.date + '"></div>'
+    + '<div class="field"><label>時刻（任意）</label><input id="m-pl-time" class="input" type="time" value="' + p.time + '"></div></div>'
+    + '<div class="field"><label>内容</label><input id="m-pl-text" class="input" maxlength="200" value="' + esc(p.text) + '"></div>'
+    + '<div class="field"><label>くり返し</label><select id="m-pl-repeat" class="select">' + PLAN_REPEATS.map(([k, n]) => '<option value="' + k + '"' + ((p.repeat || '') === k ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>'
+    + (p.repeat ? '<div class="hint">くり返しは開始日の曜日・日付で決まります（毎月31日など、その日がない月は表示しません）。</div>' : '')
+    + '<button class="btn" onclick="savePlan(\'' + id + '\')">保存する</button>'
+    + (p.repeat && ds && ds !== p.date ? '<button class="btn secondary" onclick="deletePlan(\'' + id + '\', \'' + ds + '\', \'one\')">' + Number(ds.slice(5, 7)) + '/' + Number(ds.slice(8)) + 'だけ削除</button>' : '')
+    + '<button class="btn danger" onclick="deletePlan(\'' + id + '\', \'\', \'all\')">' + (p.repeat ? 'くり返しの予定をすべて削除' : 'この予定を削除') + '</button>');
+}
+function savePlan(id) {
+  const i = db.plans.findIndex(x => x.id === id); if (i < 0) return;
+  const p = sanitizePlan({ id, date: document.getElementById('m-pl-date').value, time: document.getElementById('m-pl-time').value, text: document.getElementById('m-pl-text').value, repeat: document.getElementById('m-pl-repeat').value, skip: db.plans[i].skip });
+  if (!p) { toast('日付と内容を入力してください'); return; }
+  db.plans[i] = p; saveDb(); closeModal();
+  if (ui.view === 'calendar') renderCalendar(); else renderPlanNote();
+  toast('予定を保存しました');
 }
 function addPlan(ds) {
   const text = document.getElementById('plan-text').value.trim();
   if (!text) { toast('予定の内容を入力してください'); return; }
-  const p = sanitizePlan({ date: ds, time: document.getElementById('plan-time').value, text });
+  const rp = document.getElementById('plan-repeat');
+  const p = sanitizePlan({ date: ds, time: document.getElementById('plan-time').value, text, repeat: rp ? rp.value : '' });
   if (!p) return;
   db.plans.push(p); saveDb(); renderCalendar();
   const el = document.getElementById('plan-text'); if (el) el.focus();
 }
-function deletePlan(id) {
-  db.plans = db.plans.filter(p => p.id !== id); saveDb();
+// mode: 'one' = 繰り返しのうちこの日だけ、'all' = すべて。省略時は繰り返しなら確認する
+function deletePlan(id, ds, mode) {
+  const p = db.plans.find(x => x.id === id); if (!p) return;
+  const explicit = mode;
+  if (!mode) mode = !p.repeat ? 'all'
+    : ds && ds !== p.date ? (confirm('くり返しの予定です。\n\n「OK」= ' + Number(ds.slice(5, 7)) + '/' + Number(ds.slice(8)) + 'だけ削除\n「キャンセル」= 削除しない（すべて削除するときは予定をタップして編集画面から）') ? 'one' : '')
+    : (confirm('くり返しの予定をすべて削除しますか？') ? 'all' : '');
+  if (explicit === 'all' && p.repeat && !confirm('くり返しの予定をすべて削除しますか？')) return;
+  if (!mode) return;
+  if (mode === 'one') { p.skip = (p.skip || []).concat([ds]); Object.assign(p, sanitizePlan(p)); }
+  else db.plans = db.plans.filter(x => x.id !== id);
+  saveDb(); closeModal();
   if (ui.view === 'calendar') renderCalendar(); else renderPlanNote();
 }
 // 起動時（入力画面）に今日と明日の予定を表示する
@@ -2023,7 +2083,7 @@ function setDiaryTemp(ds, v) {
   const el = document.getElementById('diary-temp'); if (el) el.value = tp;
   const mk = document.querySelector('#cal-grid .cell[data-ds="' + ds + '"] .dw'); if (mk) mk.textContent = dayMark(ds);
 }
-function dayMark(ds) { return diaryMark(ds) + (db.plans.some(p => p.date === ds) ? '📌' : ''); }
+function dayMark(ds) { return diaryMark(ds) + (db.plans.some(p => planOccurs(p, ds)) ? '📌' : ''); }
 function diaryMark(ds) {
   const dy = db.diary[ds]; if (!dy) return '';
   return (dy.w ? (WEATHERS.find(x => x[0] === dy.w) || [])[1] || '' : '') || (dy.t ? '✎' : '');
@@ -2580,7 +2640,8 @@ function renderSettings() {
   document.getElementById('set-ocr-key').value = db.settings.ocrKey;
   document.getElementById('set-ocr-url').value = db.settings.ocrUrl;
 
-  document.getElementById('pin-status').textContent = db.settings.pin ? ('暗証番号ロック: 有効' + (db.settings.encrypt ? '（データを暗号化して保存中）' : '')) : '暗証番号ロック: 未設定';
+  document.getElementById('pin-status').innerHTML = esc(db.settings.pin ? ('暗証番号ロック: 有効' + (db.settings.encrypt ? '（データを暗号化して保存中）' : '')) : '暗証番号ロック: 未設定')
+    + (!db.settings.encrypt && (syncConfigured() || db.settings.ocrKey) ? '<br><span class="exp">同期キー' + (db.settings.ocrKey ? '・AI読み取りキー' : '') + 'は、この端末に暗号化せずに保存されています。</span>家族で共用する端末などでは、暗証番号を設定して「データを暗号化する」を使ってください。' : '');
   document.getElementById('pin-btns').innerHTML = db.settings.pin
     ? '<button class="btn secondary sm" onclick="openPinModal(\'change\')">暗証番号を変更</button><button class="btn danger sm" onclick="openPinModal(\'remove\')">ロックを解除する</button>'
       + (cryptoOk() ? (db.settings.encrypt ? '<button class="btn secondary sm" onclick="openPinModal(\'decrypt\')">暗号化をやめる</button>' : '<button class="btn secondary sm" onclick="openPinModal(\'encrypt\')">データを暗号化する</button>') : '')
@@ -3187,20 +3248,39 @@ function fmtBytes(n) { return n >= 1024 * 1024 ? (Math.round(n / 1024 / 1024 * 1
 function renderStorageUsage() {
   const el = document.getElementById('storage-usage'); if (!el) return;
   const u = storageUsage(), pct = Math.round(u.ratio * 100);
+  if (navigator.storage && navigator.storage.persisted && ui.persisted === undefined) navigator.storage.persisted().then(v => { ui.persisted = !!v; renderStorageUsage(); }).catch(() => {});
   el.innerHTML = '保存容量: 約' + fmtBytes(u.bytes) + '使用（ブラウザの上限 約5MB の ' + pct + '%）'
+    + (ui.persisted === true ? '<br>ブラウザによる自動削除からの保護: 有効' : ui.persisted === false ? '<br>ブラウザによる自動削除からの保護: 無効（ブラウザの判断でデータが消されることがあります。バックアップか同期をおすすめします' + (isIosBrowserTab() ? '。iPhoneはホーム画面に追加すると消されにくくなります' : '') + '）' : '')
     + (u.ratio >= 0.7 ? '<br><span class="exp">上限に近づいています。JSONバックアップを保存し、スプレッドシート同期の設定をおすすめします。上限を超えると新しい入力が保存できなくなります。</span>' : '');
+}
+// iPhone・iPad の Safari でホーム画面に追加せずに使っているか（しばらく開かないとデータが消されることがある）
+function isIosBrowserTab() {
+  const ua = navigator.userAgent || '';
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const standalone = navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  return ios && !standalone;
 }
 function renderBackupNote() {
   const el = document.getElementById('backup-note'); if (!el) return;
-  const DAY = 86400000;
+  const DAY = 86400000, now = Date.now(), c = db.settings.sync;
   const last = db.settings.lastBackupAt || 0;
-  const oldest = db.entries.length ? Math.min(...db.entries.map(e => new Date(e.date).getTime())) : Date.now();
-  const need = db.entries.length >= 20 && !syncConfigured() && (last ? Date.now() - last > 30 * DAY : Date.now() - oldest > 30 * DAY);
+  const oldest = db.entries.length ? Math.min(...db.entries.map(e => new Date(e.date).getTime())) : now;
+  // 同期していない端末は14日ごとにバックアップを促す（以前は30日）
+  const need = db.entries.length >= 10 && !syncConfigured() && (last ? now - last > 14 * DAY : now - oldest > 14 * DAY);
+  // 同期を設定しているのに、7日以上うまく同期できていない
+  const syncStale = syncConfigured() && db.entries.length && (c.lastResult && c.lastResult !== 'ok' || !c.lastSyncAt || now - c.lastSyncAt > 7 * DAY);
   const full = storageUsage().ratio >= 0.7;
-  el.innerHTML = need || full ? '<div class="note" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span>'
-    + (full ? '<span class="exp">保存容量が上限の' + Math.round(storageUsage().ratio * 100) + '%に達しています。</span>' : '')
-    + (need ? (last ? '最後のバックアップから30日以上経っています。' : 'バックアップがまだ保存されていません。') + 'データはこの端末のブラウザ内にだけあります。' : 'バックアップを保存してください。')
-    + '</span><button class="btn secondary sm" onclick="exportJson()">保存</button></div>' : '';
+  const ios = isIosBrowserTab() && !db.settings.iosNoteHidden && db.entries.length > 0;
+  const box = (msg, btn) => '<div class="note" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span>' + msg + '</span>' + btn + '</div>';
+  let html = '';
+  if (need || full) html += box((full ? '<span class="exp">保存容量が上限の' + Math.round(storageUsage().ratio * 100) + '%に達しています。</span>' : '')
+    + (need ? (last ? '最後のバックアップから' + Math.floor((now - last) / DAY) + '日経っています。' : 'バックアップがまだ保存されていません。') + 'データはこの端末のブラウザ内にだけあります。' : 'バックアップを保存してください。'),
+    '<button class="btn secondary sm" onclick="exportJson()">保存</button>');
+  if (syncStale) html += box('<span class="exp">スプレッドシート同期が' + (c.lastSyncAt ? Math.max(1, Math.floor((now - c.lastSyncAt) / DAY)) + '日' : 'まだ一度も') + 'できていません。</span>' + (c.lastResult && c.lastResult !== 'ok' ? '（' + esc(c.lastResult.slice(0, 60)) + '）' : ''),
+    '<button class="btn secondary sm" onclick="syncNow(false)">同期</button>');
+  if (ios) html += box('iPhone・iPadでは、ホーム画面に追加せずにSafariで使っていると、しばらく開かない間にデータが消されることがあります。共有ボタン →「ホーム画面に追加」から開いてください。',
+    '<button class="btn secondary sm" onclick="db.settings.iosNoteHidden = true; saveDb(true); renderBackupNote()">閉じる</button>');
+  el.innerHTML = html;
 }
 function onRestoreFile(input) {
   const file = input.files && input.files[0]; input.value = '';
@@ -3843,7 +3923,7 @@ const DIARY_PREFIX = 'diary-';
 function diaryRecords() { return Object.keys(db.diary).map(ds => { const r = { id: DIARY_PREFIX + ds, date: ds, type: 'diary', category: '', item: db.diary[ds].w, amount: 0, memo: db.diary[ds].t }; if (db.diary[ds].tp) r.store = db.diary[ds].tp; return r; }); }
 // 予定も明細と同じ仕組みで同期する（type 'plan'・item に時刻、memo に内容）。GAS側の変更は不要
 const PLAN_PREFIX = 'plan-';
-function planRecords() { return db.plans.map(p => ({ id: p.id, date: p.date, type: 'plan', category: '', item: p.time, amount: 0, memo: p.text })); }
+function planRecords() { return db.plans.map(p => { const r = { id: p.id, date: p.date, type: 'plan', category: p.repeat || '', item: p.time, amount: 0, memo: p.text }; if (p.skip) r.store = p.skip.join(','); return r; }); }
 function syncRecords() { return db.entries.concat(diaryRecords(), planRecords()); }
 function syncConfigured() { const c = db.settings.sync; return !!(c.url && c.key); }
 function setSyncOpt(k, v) {
@@ -3914,7 +3994,7 @@ async function syncNow(silent) {
         return;
       }
       if (se && se.type === 'plan') {
-        const p = sanitizePlan({ id: se.id, date: se.date, time: se.item, text: se.memo });
+        const p = sanitizePlan({ id: se.id, date: se.date, time: se.item, text: se.memo, repeat: se.category, skip: se.store });
         if (p && p.id === String(se.id)) { const i = db.plans.findIndex(x => x.id === p.id); if (i >= 0) db.plans[i] = p; else db.plans.push(p); received++; }
         return;
       }
@@ -3979,7 +4059,7 @@ document.addEventListener('DOMContentLoaded', () => {
   } else bootAfterLoad();
   initLock();
   window.__kakeiboBooted = true; // 救出画面を出さない合図（ここまで来れば起動成功）
-  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(v => { ui.persisted = !!v; }).catch(() => {});
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').then(reg => {
