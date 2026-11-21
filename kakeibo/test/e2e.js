@@ -593,6 +593,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await yp.evaluate(() => { window.print = () => { window.__printed = document.getElementById('print-area').innerHTML; }; });
     await yp.click('button:has-text("この年を印刷・PDF")');
     check('年計表: 印刷に年計表', await yp.evaluate(() => (window.__printed || '').includes('年計表（支出）') && window.__printed.includes('125%')));
+    check('年計表: 年間の印刷は横向き', await yp.evaluate(() => (window.__printed || '').includes('size: A4 landscape')));
     // 資産・負債
     await yp.click('[data-view=list]'); await yp.click('#asset-card button:has-text("追加")'); await yp.waitForSelector('#m-as-name');
     await yp.fill('#m-as-name', 'つみたてNISA'); await yp.fill('#m-as-value', '500000+20000'); await yp.click('#modal-box button:has-text("保存する")'); await wait(80);
@@ -615,6 +616,7 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await yp.click('.modal-close');
     await yp.click('#asset-card button:has-text("推移")'); await yp.waitForSelector('#modal-box .table');
     check('資産・負債: 純資産の推移', (await text(yp, '#modal-box')).includes('純資産') && (await text(yp, '#modal-box')).includes(fmtYenT(nw.net)), (await text(yp, '#modal-box')).slice(0, 200));
+    check('資産・負債: 純資産の推移のグラフ', (await yp.$$('#nw-chart rect')).length > 0 && (await text(yp, '#modal-box')).includes('12か月で'));
     await yp.click('.modal-close');
     // 予定: カレンダーで追加 → 入力画面に今日・明日の予定
     await yp.click('[data-view=calendar]'); await yp.click('#cal-grid .cell.today');
@@ -666,6 +668,34 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     await yp.click('#bulk-save'); await wait(80);
     const bulk = await yp.evaluate(n => db.entries.slice(n), n0);
     check('一覧入力: 金額のある行だけまとめて保存', bulk.length === 3 && bulk[0].category === '日用品' && bulk[0].product === '洗剤' && bulk[0].amount === 398 && bulk[1].type === 'income' && bulk[1].memo === 'おこづかい' && bulk[2].amount === 300, JSON.stringify(bulk));
+    // 一覧入力: 振替・使った人・家計／事業
+    await yp.evaluate(() => { db.members = ['自分', '妻']; db.companies = ['A社']; saveDb(true); });
+    await yp.click('#bulk-top-btn'); await yp.waitForSelector('#b-amount-0');
+    await yp.selectOption('#b-type-0', 'transfer');
+    check('一覧入力: 振替では分類を隠して振替先を表示', !(await yp.isVisible('#b-cat-0')) && (await yp.isVisible('#b-to-0')) && !(await yp.isVisible('#b-person-0')));
+    await yp.fill('#b-amount-0', '10000'); await yp.selectOption('#b-account-0', '銀行口座'); await yp.selectOption('#b-to-0', '現金');
+    await yp.fill('#b-amount-1', '700'); await yp.selectOption('#b-person-1', '妻'); await yp.selectOption('#b-biz-1', 'A社');
+    const n1 = await yp.evaluate(() => db.entries.length);
+    await yp.click('#bulk-save'); await wait(80);
+    const bulk2 = await yp.evaluate(n => db.entries.slice(n), n1);
+    check('一覧入力: 振替・使った人・家計／事業も保存', bulk2.length === 2 && bulk2[0].type === 'transfer' && bulk2[0].account === '銀行口座' && bulk2[0].toAccount === '現金' && bulk2[0].amount === 10000 && bulk2[1].person === '妻' && bulk2[1].biz === 'A社', JSON.stringify(bulk2));
+    await yp.click('#bulk-top-btn'); await yp.waitForSelector('#b-amount-0');
+    await yp.selectOption('#b-type-0', 'transfer'); await yp.fill('#b-amount-0', '100'); await yp.selectOption('#b-account-0', '現金'); await yp.selectOption('#b-to-0', '現金');
+    await yp.click('#bulk-save'); await wait(60);
+    check('一覧入力: 振替元と振替先が同じなら保存しない', (await yp.evaluate(n => db.entries.length, n1)) === n1 + 2 && (await yp.isVisible('#bulk-save')));
+    await yp.click('.modal-close');
+    await yp.evaluate(() => { db.members = []; db.companies = []; db.entries.forEach(e => { delete e.person; delete e.biz; }); saveDb(true); render(); });
+    // 通常の入力でお店を記録
+    await yp.fill('#in-amount', '450'); await yp.fill('#in-store', 'パン屋C'); await yp.click('#save-btn'); await wait(60);
+    check('入力: お店を記録して欄を空に', (await yp.evaluate(() => db.entries[db.entries.length - 1].store)) === 'パン屋C' && (await yp.inputValue('#in-store')) === '' && (await yp.evaluate(() => [...document.querySelectorAll('#store-history option')].some(o => o.value === 'パン屋C'))));
+    // 検索で日記・予定も探す
+    await yp.evaluate(() => { db.diary[todayStr()] = Object.assign({ w: '', t: '' }, db.diary[todayStr()], { t: '駅前で抽選会があった' }); db.plans.push(sanitizePlan({ date: todayStr(), text: '抽選会の受け取り' })); saveDb(true); });
+    await yp.click('[data-view=list]'); await yp.fill('#list-q', '抽選会'); await wait(60);
+    const th = await text(yp, '#text-hits');
+    check('検索: 日記と予定もヒット', th.includes('2件') && th.includes('駅前で抽選会') && th.includes('抽選会の受け取り'), th);
+    await yp.click('#text-hits .plan-row >> nth=0'); await wait(60);
+    check('検索: タップでカレンダーのその日へ', await yp.evaluate(() => ui.view === 'calendar' && ui.selectedDay === todayStr()));
+    await yp.click('[data-view=list]'); await yp.fill('#list-q', ''); await wait(30);
     // 出納帳: 収入・支出の行にメモ
     await yp.evaluate(() => { db.entries.push({ id: 'lm1', date: todayStr(), type: 'expense', category: '食費', item: '', amount: 120, memo: 'お昼のパン', account: '現金' }); saveDb(true); openLedger('現金'); });
     check('出納帳: 収入・支出の行にメモを表示', (await text(yp, '#modal-box')).includes('食費 · お昼のパン'));
