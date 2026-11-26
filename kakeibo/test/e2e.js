@@ -260,6 +260,64 @@ const text = async (page, sel) => ((await page.textContent(sel)) || '').replace(
     check('引き落とし振替の自動作成', autoPay.length === 1 && autoPay[0].amount === 3000 && autoPay[0].account === '銀行口座' && autoPay[0].toAccount === 'クレジットカード', JSON.stringify(autoPay));
     await page.reload(); await page.waitForSelector('#view-input.active');
     check('引き落とし振替は二重に作られない', (await page.evaluate(() => JSON.parse(localStorage.getItem('kakeibo.v1')).entries.filter(e => e.autoPay).length)) === 1);
+    // カード払いを後から足す・消すと引き落とし額を計算し直す
+    const payAmt = () => page.evaluate(() => (db.entries.find(e => e.autoPay) || {}).amount);
+    await page.evaluate(d => { db.entries.push({ id: 'cpx1', date: d, type: 'expense', category: '食費', item: '', amount: 500, memo: '後から追加', account: 'クレジットカード' }); saveDb(true); render(); }, cardDate);
+    check('カード払いを後から足すと引き落とし額も増える', (await payAmt()) === 3500, String(await payAmt()));
+    await page.evaluate(() => { db.entries = db.entries.filter(e => e.id !== 'cpx1'); saveDb(true); render(); });
+    check('カード払いを消すと引き落とし額も減る', (await payAmt()) === 3000, String(await payAmt()));
+    // 手で金額を直した月は計算し直さない
+    await page.click('[data-view=list]');
+    await page.evaluate(() => { const e = db.entries.find(x => x.autoPay); ui.month = periodOf(e.date); render(); openEdit(e.id); });
+    await page.waitForSelector('#m-e-amount');
+    check('自動の引き落としの編集画面に説明', (await text(page, '#modal-box')).includes('自動で作られた振替'));
+    await page.fill('#m-e-amount', '3100'); await page.click('#modal-box button:has-text("保存する")'); await wait(80);
+    await page.evaluate(d => { db.entries.push({ id: 'cpx2', date: d, type: 'expense', category: '食費', item: '', amount: 200, memo: '', account: 'クレジットカード' }); saveDb(true); render(); }, cardDate);
+    const man = await page.evaluate(() => ({ amt: db.entries.find(e => e.autoPay).amount, manual: db.accounts.find(a => a.card).payManual }));
+    check('手で直した引き落としは計算し直さない', man.amt === 3100 && man.manual && man.manual.length === 1, JSON.stringify(man));
+    // 自動の引き落としを削除すると、その月はもう作らない
+    await page.evaluate(() => deleteEntry(db.entries.find(e => e.autoPay).id)); await wait(80);
+    await page.reload(); await page.waitForSelector('#view-input.active');
+    const skp = await page.evaluate(() => ({ n: db.entries.filter(e => e.autoPay).length, skip: db.accounts.find(a => a.card).paySkip }));
+    check('削除した引き落としは作り直さない', skp.n === 0 && skp.skip && skp.skip.length === 1, JSON.stringify(skp));
+    // 口座の編集画面から自動に戻す
+    await openSettings(page);
+    await page.click('#acct-list .cat-item:has-text("クレジットカード") >> button[title="編集"]'); await page.waitForSelector('#m-a-card');
+    check('口座の編集画面に自動で作らない月を表示', (await text(page, '#modal-box')).includes('自動で作らない月') && (await text(page, '#modal-box')).includes('計算し直さない月'));
+    await page.click('#modal-box button:has-text("自動の引き落としに戻す")'); await wait(80);
+    const rs = await page.evaluate(() => ({ amt: (db.entries.find(e => e.autoPay) || {}).amount, a: db.accounts.find(a => a.card) }));
+    check('自動の引き落としに戻すと作り直して計算し直す', rs.amt === 3200 && !rs.a.paySkip && !rs.a.payManual, JSON.stringify({ amt: rs.amt, skip: rs.a.paySkip, man: rs.a.payManual }));
+    await page.evaluate(() => { db.entries = db.entries.filter(e => e.id !== 'cpx2'); saveDb(true); render(); });
+    check('追加分を消すと元の引き落とし額', (await payAmt()) === 3000);
+    // 締め日を変えても、作成済みの引き落としは計算し直さない
+    const cc = await newPage(browser);
+    await cc.evaluate(() => {
+      const ym = addMonths(todayStr().slice(0, 7), -3);
+      db.accounts.push({ id: 'cardX', name: 'Xカード', initial: 0, card: true, closingDay: 15, payDay: 10, payOffset: 1, payAccount: '銀行口座', payFrom: ym });
+      db.entries.push({ id: 'cx1', date: ym + '-05', type: 'expense', category: '食費', item: '', amount: 1000, memo: '', account: 'Xカード' }, { id: 'cx2', date: ym + '-12', type: 'expense', category: '食費', item: '', amount: 400, memo: '', account: 'Xカード' });
+      saveDb(true); render();
+    });
+    check('カード: 引き落とし作成（テスト用の別端末）', (await cc.evaluate(() => db.entries.filter(e => e.autoPay).map(e => e.amount).join(','))) === '1400');
+    await openSettings(cc);
+    await cc.click('#acct-list .cat-item:has-text("Xカード") >> button[title="編集"]'); await cc.waitForSelector('#m-a-closing');
+    await cc.selectOption('#m-a-closing', '10'); await cc.click('#modal-box button:has-text("保存する")'); await wait(80);
+    check('締め日を変えても作成済みの引き落とし額はそのまま', (await cc.evaluate(() => db.entries.filter(e => e.autoPay && e.autoPay.startsWith('cardX:')).sort((a, b) => a.date < b.date ? -1 : 1)[0].amount)) === 1400);
+    // カードの口座を削除: 引き落としも消す／残す
+    const before = await cc.evaluate(() => accountBalance('銀行口座'));
+    await cc.evaluate(() => { let n = 0; window.confirm = () => (++n === 1); deleteAccount('cardX'); });
+    const kept = await cc.evaluate(() => db.entries.filter(e => e.memo.includes('Xカード 引き落とし')));
+    check('カード削除で引き落としを残す（振替先は空欄、残高はそのまま）', kept.length > 0 && kept.every(e => e.toAccount === '') && (await cc.evaluate(() => accountBalance('銀行口座'))) === before, JSON.stringify(kept));
+    await cc.evaluate(() => {
+      db.accounts.push({ id: 'cardY', name: 'Yカード', initial: 0, card: true, closingDay: 15, payDay: 10, payOffset: 1, payAccount: '銀行口座', payFrom: addMonths(todayStr().slice(0, 7), -3) });
+      db.entries.push({ id: 'cy1', date: addMonths(todayStr().slice(0, 7), -3) + '-05', type: 'expense', category: '食費', item: '', amount: 700, memo: '', account: 'Yカード' });
+      saveDb(true); render(); window.confirm = () => true;
+    });
+    const b2 = await cc.evaluate(() => accountBalance('銀行口座'));
+    await cc.evaluate(() => deleteAccount('cardY'));
+    const gone = await cc.evaluate(() => ({ n: db.entries.filter(e => e.autoPay && e.autoPay.startsWith('cardY:')).length, bal: accountBalance('銀行口座') }));
+    check('カード削除で引き落としも消すと残高が戻る', gone.n === 0 && gone.bal === b2 + 700, JSON.stringify({ gone, b2 }));
+    check('カードの引き落とし: JSエラーなし', cc.errors.length === 0, cc.errors.join(' / '));
+    await cc.context().close();
     // 口座名の変更がカードの引き落とし口座に追随
     await openSettings(page);
     await page.click('#acct-list .cat-item:has-text("銀行口座") >> button[title="編集"]');

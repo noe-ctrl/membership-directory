@@ -933,7 +933,7 @@ function normalizeDb(data) {
     plans: Array.isArray(d.plans) ? d.plans.map(sanitizePlan).filter(Boolean).slice(-3000) : [],
     accounts: Array.isArray(d.accounts) ? d.accounts.filter(a => a && a.name).map(a => {
       const o = { id: safeId(a.id), name: String(a.name), initial: Math.round(num0(a.initial)) };
-      if (a.card) { o.card = true; o.closingDay = Math.min(31, Math.max(1, Math.round(num0(a.closingDay)) || 15)); o.payDay = Math.min(31, Math.max(1, Math.round(num0(a.payDay)) || 10)); o.payOffset = a.payOffset === 2 ? 2 : 1; o.payAccount = String(a.payAccount || ''); o.payFrom = /^\d{4}-\d{2}$/.test(String(a.payFrom || '')) ? a.payFrom : ''; }
+      if (a.card) { o.card = true; o.closingDay = Math.min(31, Math.max(1, Math.round(num0(a.closingDay)) || 15)); o.payDay = Math.min(31, Math.max(1, Math.round(num0(a.payDay)) || 10)); o.payOffset = a.payOffset === 2 ? 2 : 1; o.payAccount = String(a.payAccount || ''); o.payFrom = /^\d{4}-\d{2}$/.test(String(a.payFrom || '')) ? a.payFrom : ''; const yms = v => [...new Set((Array.isArray(v) ? v : []).map(String).filter(x => /^\d{4}-\d{2}$/.test(x)))].sort().slice(-120); const sk = yms(a.paySkip), mn = yms(a.payManual); if (sk.length) o.paySkip = sk; if (mn.length) o.payManual = mn; }
       return o;
     }) : DEFAULT_ACCOUNTS.map(a => Object.assign({ id: uid() }, a)),
     settings: {
@@ -1301,6 +1301,7 @@ function shiftMonth(n) {
 }
 function goThisMonth() { ui.month = currentPeriod(); ui.selectedDay = null; render(); }
 function render() {
+  if (!pendingEnvelope) postCardPayments();
   updateScopeRow();
   const yearMode = ui.reportMode === 'year' && ui.view === 'report';
   document.getElementById('month-label').innerHTML = yearMode ? ui.month.slice(0, 4) + '年'
@@ -2879,6 +2880,7 @@ function openEdit(id) {
     + (db.companies.length || e.biz ? '<div class="field" id="m-e-bizblock"' + (isTr ? ' style="display:none"' : '') + '><label>家計／事業</label><select id="m-e-biz" class="select">' + bizOptions(e.biz || '') + '</select></div>' : '')
     + (db.members.length || e.person ? '<div class="field" id="m-e-personblock"' + (isTr ? ' style="display:none"' : '') + '><label>使った人</label><select id="m-e-person" class="select">' + personOptions(e.person) + '</select></div>' : '') + '</div>'
     + (receiptN > 1 ? '<div class="hint">このレシート（' + esc(e.store || '店名なし') + '）には他に' + (receiptN - 1) + '件の明細があります。</div>' : '')
+    + (cardOfAutoPay(e.autoPay) ? '<div class="hint">カードの引き落としとして自動で作られた振替です。カード払いの明細が変わると金額も自動で計算し直します。金額を手で直すと、この月は計算し直さなくなります。</div>' : '')
     + '<button class="btn" onclick="saveEdit(\'' + id + '\')">保存する</button>'
     + (isTr ? '' : '<button class="btn secondary" onclick="duplicateEntry(\'' + id + '\')">この内容を複製して入力</button>')
     + '<button class="btn danger" onclick="deleteEntry(\'' + id + '\')">この明細を削除</button>'
@@ -2913,6 +2915,8 @@ function saveEdit(id) {
   const newType = document.getElementById('m-e-type').value;
   const from = document.getElementById('m-e-from').value, to = document.getElementById('m-e-to').value;
   if (newType === 'transfer' && (!from || !to || from === to)) { toast('振替元と振替先を確認してください'); return; }
+  const cp = cardOfAutoPay(e.autoPay);
+  if (cp && (Math.abs(amount) !== e.amount || newType !== e.type || from !== e.account || to !== e.toAccount)) cp.a.payManual = addYm(cp.a.payManual, cp.ym);
   e.type = newType;
   e.date = date;
   e.amount = Math.abs(amount);
@@ -2937,11 +2941,13 @@ function saveEdit(id) {
   saveDb(); closeModal(); render(); toast('保存しました');
 }
 function deleteEntry(id) {
-  if (!confirm('この明細を削除しますか？')) return;
+  const target = db.entries.find(x => x.id === id), cp = target && cardOfAutoPay(target.autoPay);
+  if (!confirm(cp ? 'この引き落としを削除しますか？\n（自動で作られた引き落としです。削除すると、' + fmtMonth(cp.ym) + '締め分はもう自動で作りません）' : 'この明細を削除しますか？')) return;
   const removed = db.entries.filter(x => x.id === id);
   db.entries = db.entries.filter(x => x.id !== id);
+  if (cp) cp.a.paySkip = addYm(cp.a.paySkip, cp.ym);
   saveDb(); closeModal(); render();
-  toast('削除しました', { label: '元に戻す', fn: () => restoreEntries(removed) });
+  toast('削除しました', { label: '元に戻す', fn: () => { if (cp) { cp.a.paySkip = (cp.a.paySkip || []).filter(x => x !== cp.ym); if (!cp.a.paySkip.length) delete cp.a.paySkip; } restoreEntries(removed); } });
 }
 function restoreEntries(list) {
   const ids = new Set(db.entries.map(e => e.id));
@@ -3397,7 +3403,9 @@ function openAccount(id) {
     + '<div class="field"><label>引き落とし日</label><select id="m-a-payday" class="select">' + Array.from({ length: 31 }, (_, k) => '<option value="' + (k + 1) + '"' + ((a.payDay || 10) === k + 1 ? ' selected' : '') + '>' + (k + 1) + '日' + (k === 30 ? '（月末）' : '') + '</option>').join('') + '</select></div></div>'
     + '<div class="row2"><div class="field"><label>引き落とし月</label><select id="m-a-offset" class="select"><option value="1"' + ((a.payOffset || 1) === 1 ? ' selected' : '') + '>翌月</option><option value="2"' + (a.payOffset === 2 ? ' selected' : '') + '>翌々月</option></select></div>'
     + '<div class="field"><label>引き落とし口座</label><select id="m-a-payacc" class="select">' + others.map(x => '<option value="' + esc(x.name) + '"' + (x.name === a.payAccount ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select></div></div>'
-    + '<div class="hint">締め日までの利用額（このカードで支払った支出と振替）を集計し、引き落とし日に「引き落とし口座 → カード」の振替を自動で作ります。' + (a.card && a.payFrom ? fmtMonth(a.payFrom) + '締め分から自動作成しています。' : '設定した時点の締め月から自動作成します（過去の分は作りません）。') + '</div>'
+    + '<div class="hint">締め日までの利用額（このカードで支払った支出と振替）を集計し、引き落とし日に「引き落とし口座 → カード」の振替を自動で作ります。後からカード払いを足したり消したりすると、引き落とし額も計算し直します。' + (a.card && a.payFrom ? fmtMonth(a.payFrom) + '締め分から自動作成しています。' : '設定した時点の締め月から自動作成します（過去の分は作りません）。') + '</div>'
+    + (a.paySkip || a.payManual ? '<div class="note" style="margin-bottom:10px">' + (a.paySkip ? '引き落としを削除したため自動で作らない月: ' + a.paySkip.map(fmtMonth).join('、') + '締め分<br>' : '') + (a.payManual ? '金額を手で直したため計算し直さない月: ' + a.payManual.map(fmtMonth).join('、') + '締め分<br>' : '')
+      + '<button class="btn secondary sm" style="margin-top:6px" onclick="resetCardPay(\'' + a.id + '\')">自動の引き落としに戻す</button></div>' : '')
     + '</div>'
     + '<div class="hint">初期残高は、この家計簿で記録を始めた時点の残高です。以降の収入・支出・振替から現在の残高を計算します。クレジットカードは未払い額がマイナス残高として表示されます。</div>'
     + '<button class="btn" onclick="saveAccount(' + (id ? '\'' + id + '\'' : 'null') + ')">保存する</button>');
@@ -3405,16 +3413,28 @@ function openAccount(id) {
 function readCardSettings(a) {
   const card = document.getElementById('m-a-card').checked;
   if (!card) { delete a.card; delete a.closingDay; delete a.payDay; delete a.payOffset; delete a.payAccount; delete a.payFrom; return; }
+  const prevClosing = a.card ? a.closingDay : 0;
   a.card = true;
   a.closingDay = Number(document.getElementById('m-a-closing').value) || 15;
+  if (prevClosing && prevClosing !== a.closingDay) db.entries.forEach(e => { const c = cardOfAutoPay(e.autoPay); if (c && c.a === a) a.payManual = addYm(a.payManual, c.ym); });
   a.payDay = Number(document.getElementById('m-a-payday').value) || 10;
   a.payOffset = Number(document.getElementById('m-a-offset').value) === 2 ? 2 : 1;
   a.payAccount = document.getElementById('m-a-payacc').value || '';
   if (!a.payFrom) a.payFrom = todayStr().slice(0, 7);
 }
+// 自動の引き落とし（autoPay = カードの口座ID:締め月）から、そのカードと締め月を引く
+function cardOfAutoPay(key) {
+  const a = key ? db.accounts.find(x => String(key).startsWith(x.id + ':')) : null;
+  return a ? { a, ym: String(key).slice(a.id.length + 1) } : null;
+}
+function addYm(list, ym) { return [...new Set((list || []).concat([ym]))].sort(); }
+// 引き落とし日を過ぎた締め月の引き落とし振替を作る。作成済みの分も、カード払いの明細が後から増えたり消えたりしたら計算し直す
+// （手で金額を直した月 payManual はそのまま、削除した月 paySkip は作らない）
 function postCardPayments() {
-  const today = todayStr(); let posted = 0;
+  const today = todayStr(); let posted = 0, changed = 0;
   db.accounts.filter(a => a.card && a.payAccount && a.payFrom).forEach(a => {
+    const mine = db.entries.filter(e => !e.autoPay && (e.account === a.name || e.toAccount === a.name));
+    const made = new Map(); db.entries.forEach(e => { if (e.autoPay && String(e.autoPay).startsWith(a.id + ':')) made.set(String(e.autoPay).slice(a.id.length + 1), e); });
     for (let ym = a.payFrom; ym <= today.slice(0, 7); ym = addMonths(ym, 1)) {
       const closeDate = ym + '-' + pad2(Math.min(a.closingDay, daysInMonth(ym)));
       const prevYm = addMonths(ym, -1);
@@ -3422,9 +3442,9 @@ function postCardPayments() {
       const payYm = addMonths(ym, a.payOffset || 1);
       const payDate = payYm + '-' + pad2(Math.min(a.payDay, daysInMonth(payYm)));
       if (payDate > today) break;
-      const key = a.id + ':' + ym;
-      if (db.entries.some(e => e.autoPay === key)) continue;
-      const inPeriod = db.entries.filter(e => e.date >= startDate && e.date <= closeDate && !e.autoPay);
+      const key = a.id + ':' + ym, ex = made.get(ym);
+      if (ex ? (a.payManual || []).includes(ym) : (a.paySkip || []).includes(ym)) continue;
+      const inPeriod = mine.filter(e => e.date >= startDate && e.date <= closeDate);
       const amount = inPeriod.reduce((s, e) => {
         if (isAdjust(e)) return s; // 残高調整は請求額に含めない
         if (e.type === 'expense' && e.account === a.name) return s + e.amount;
@@ -3433,12 +3453,25 @@ function postCardPayments() {
         if (e.type === 'transfer' && e.toAccount === a.name) return s - e.amount;
         return s;
       }, 0);
+      if (ex) {
+        if (amount <= 0) { db.entries = db.entries.filter(e => e !== ex); changed++; } // カード払いがすべて消えた
+        else if (ex.amount !== amount) { ex.amount = amount; changed++; }
+        continue;
+      }
       if (amount <= 0) continue;
       db.entries.push({ id: uid(), date: payDate, type: 'transfer', category: '振替', item: '', amount, memo: a.name + ' 引き落とし（' + Number(startDate.slice(5, 7)) + '/' + Number(startDate.slice(8)) + '〜' + Number(closeDate.slice(5, 7)) + '/' + Number(closeDate.slice(8)) + '利用分）', account: a.payAccount, toAccount: a.name, autoPay: key });
       posted++;
     }
   });
-  if (posted) { saveDb(); toast('カードの引き落とし振替を' + posted + '件自動作成しました'); }
+  if (posted || changed) saveDb();
+  if (posted) toast('カードの引き落とし振替を' + posted + '件自動作成しました');
+  return posted + changed;
+}
+function resetCardPay(id) {
+  const a = db.accounts.find(x => x.id === id); if (!a) return;
+  if (!confirm('削除した月の引き落としを作り直し、手で直した金額も自動の計算に戻します。よろしいですか？')) return;
+  delete a.paySkip; delete a.payManual;
+  saveDb(); closeModal(); render(); renderSettings(); toast('自動の引き落としに戻しました');
 }
 function saveAccount(id) {
   const name = document.getElementById('m-a-name').value.trim();
@@ -3455,10 +3488,14 @@ function saveAccount(id) {
 function deleteAccount(id) {
   const a = db.accounts.find(x => x.id === id); if (!a) return;
   const used = db.entries.filter(e => e.account === a.name || e.toAccount === a.name).length;
+  const pays = db.entries.filter(e => { const c = cardOfAutoPay(e.autoPay); return c && c.a === a; });
   if (!confirm('「' + a.name + '」を削除しますか？' + (used ? '\n（' + used + '件の明細の口座は「指定なし」になります）' : ''))) return;
+  if (pays.length && confirm('このカードの自動の引き落とし振替' + pays.length + '件（合計 ' + fmtYen(pays.reduce((s, e) => s + e.amount, 0)) + '）も削除しますか？\n\n「OK」= 削除する（引き落とし口座の残高が元に戻ります）\n「キャンセル」= 残す（実際に引き落とされた記録として残し、振替先は空欄になります）')) {
+    const ids = new Set(pays.map(e => e.id)); db.entries = db.entries.filter(e => !ids.has(e.id));
+  }
   db.accounts = db.accounts.filter(x => x.id !== id);
   renameEverywhere('account', a.name, null);
-  saveDb(); renderSettings();
+  saveDb(); render(); renderSettings();
 }
 function moveAccount(i, dir) {
   const j = i + dir; if (j < 0 || j >= db.accounts.length) return;
